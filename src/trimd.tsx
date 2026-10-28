@@ -1,5 +1,5 @@
 import { render } from 'ink';
-import App from './ui/App';
+import App from './ui/App.js';
 
 const USAGE = `usage: trimd <FILE> [flags]
 
