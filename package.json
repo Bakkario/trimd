@@ -7,7 +7,7 @@
   },
   "scripts": {
     "test": "node --import tsx --test 'test/*.test.ts' 'test/*.test.tsx'",
-    "build": "esbuild src/trimd.tsx --bundle --platform=node --format=esm --outfile=dist/trimd.js --banner:js=\"#!/usr/bin/env node\" --log-level=warning",
+    "build": "esbuild src/trimd.tsx --bundle --platform=node --format=esm --outfile=dist/trimd.js --banner:js=\"#!/usr/bin/env node\nimport { createRequire } from 'module';\nconst require = createRequire(import.meta.url);\" --log-level=warning && chmod +x dist/trimd.js",
     "start": "node dist/trimd.js",
     "dev": "node --import tsx src/trimd.tsx"
   },
@@ -17,6 +17,7 @@
     "markdown-it": "15.0.3",
     "markdown-it-task-lists": "2.1.1",
     "react": "19.3.1",
+    "react-devtools-core": "6.1.2",
     "yaml": "^2.9.1"
   },
   "devDependencies": {

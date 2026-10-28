@@ -13,7 +13,7 @@ importers:
         version: 2.1.11
       ink:
         specifier: 8.0.0
-        version: 8.0.0(@types/react@19.3.0)(react@19.3.1)
+        version: 8.0.0(@types/react@19.3.0)(react-devtools-core@6.1.2)(react@19.3.1)
       markdown-it:
         specifier: 15.0.3
         version: 15.0.3
@@ -23,6 +23,9 @@ importers:
       react:
         specifier: 19.3.1
         version: 19.3.1
+      react-devtools-core:
+        specifier: 6.1.2
+        version: 6.1.2
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -537,6 +540,9 @@ packages:
     resolution: {integrity: sha512-k9lSsjl36EJdK7I06v7APZCbyGT2vMTsYSRX1Q2nbYmnkBqgUhRkAuzH08Ciotteu/PLJmIF2+tti7o3C/ts2g==}
     engines: {node: '>=18'}
 
+  react-devtools-core@6.1.2:
+    resolution: {integrity: sha512-ldFwzufLletzCikNJVYaxlxMLu7swJ3T2VrGfzXlMsVhZhPDKXA38DEROidaYZVgMAmQnIjymrmqto5pyfrwPA==}
+
   react-reconciler@0.34.0:
     resolution: {integrity: sha512-eVibvB1fc9j5Qf1KRkiM3GzRPBdjg2P6G6QV2f3P6Eb3OGMxRBhdg2rrUwjbV5JrQaJj8nOa8uajmmJA5tJWjQ==}
     engines: {node: '>=0.10.0'}
@@ -557,6 +563,10 @@ packages:
 
   scheduler@0.28.0:
     resolution: {integrity: sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw==}
+
+  shell-quote@1.12.0:
+    resolution: {integrity: sha512-PcByqNyT/38F2kDNi006HAMRJaULuBzq/FOsw3qdZvX/GA9W/jamDaRskgHjubHiftXK5sIFxLNkvrXUwcof6Q==}
+    engines: {node: '>= 0.4'}
 
   signal-exit@3.0.7:
     resolution: {integrity: sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==}
@@ -635,6 +645,18 @@ packages:
   wrap-ansi@7.0.0:
     resolution: {integrity: sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==}
     engines: {node: '>=10'}
+
+  ws@7.5.13:
+    resolution: {integrity: sha512-rsKI6xDBFVf4r/x8XyChGK04QR/XHroxs/jUcoWvtEZM8TPU/X/uIY9B1CsSzYws9ZJb/6bbBu7dPhFW00CAoA==}
+    engines: {node: '>=8.3.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: ^5.0.2
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
 
   y18n@5.0.8:
     resolution: {integrity: sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA==}
@@ -932,7 +954,7 @@ snapshots:
 
   indent-string@5.0.0: {}
 
-  ink@8.0.0(@types/react@19.3.0)(react@19.3.1):
+  ink@8.0.0(@types/react@19.3.0)(react-devtools-core@6.1.2)(react@19.3.1):
     dependencies:
       '@alcalzone/ansi-tokenize': 0.3.1
       ansi-escapes: 7.3.0
@@ -960,6 +982,7 @@ snapshots:
       yoga-layout: 3.2.1
     optionalDependencies:
       '@types/react': 19.3.0
+      react-devtools-core: 6.1.2
 
   is-fullwidth-code-point@3.0.0: {}
 
@@ -1014,6 +1037,14 @@ snapshots:
 
   quick-lru@7.3.0: {}
 
+  react-devtools-core@6.1.2:
+    dependencies:
+      shell-quote: 1.12.0
+      ws: 7.5.13
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   react-reconciler@0.34.0(react@19.3.1):
     dependencies:
       react: 19.3.1
@@ -1029,6 +1060,8 @@ snapshots:
       signal-exit: 3.0.7
 
   scheduler@0.28.0: {}
+
+  shell-quote@1.12.0: {}
 
   signal-exit@3.0.7: {}
 
@@ -1127,6 +1160,8 @@ snapshots:
       ansi-styles: 4.3.0
       string-width: 4.2.3
       strip-ansi: 6.0.1
+
+  ws@7.5.13: {}
 
   y18n@5.0.8: {}
 
