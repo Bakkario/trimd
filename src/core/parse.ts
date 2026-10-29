@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import taskLists from 'markdown-it-task-lists';
 import { wikilinkPlugin } from './rules-wikilink.js';
+import { tagPlugin } from './rules-tag.js';
 import type { StateInline, StateCore, Token } from 'markdown-it';
 
 // ---- custom inline rule: ~~strikethrough~~ -> s_open / text / s_close ----
@@ -65,7 +66,8 @@ function getMd(): InstanceType<typeof MarkdownIt> {
     md.use(taskLists);
     md.core.ruler.after('inline', 'trimd-task-meta', taskMetaRule);
     md.use(wikilinkPlugin);
-    // plugins added later by editing this file: tagPlugin (2.3), embedPlugin (2.5)
+    md.use(tagPlugin);
+    // plugins added later by editing this file: embedPlugin (2.5)
   }
   return md;
 }

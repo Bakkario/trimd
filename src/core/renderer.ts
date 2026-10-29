@@ -166,6 +166,11 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
         linkWarn = false;
         break;
       }
+      case 'tag': {
+        // INV-2.3 — content includes the leading #
+        out.push({ text: c.content, sgr: theme.colors.tag || null });
+        break;
+      }
       case 'wikilink': {
         // INV-2.1/2.2 — `#heading` stripped for resolution and display
         const meta = c.meta as { target: string; label: string } | undefined;
