@@ -1,4 +1,4 @@
-// 02 §8 — renderer conventions (task 1.3: headings, paragraphs, emphasis, hr, images; fences/tables/lists/quotes/links are INTERIM branches extended by tasks 1.4–1.7)
+// 02 §8 — renderer conventions (task 1.4: lists implemented; remaining INTERIM: fence (1.5), table (1.6), blockquote prefix (1.7), links (1.7))
 
 import type { Token } from 'markdown-it';
 import type { RenderedLine, Theme } from './types.js';
@@ -83,7 +83,7 @@ function renderInline(theme: Theme, children: Token[], base: string[]): Seg[] {
         break;
       }
       case 'html_inline':
-        // INTERIM (task 1.4) — task-lists plugin checkbox; rendered from list_item meta
+        // task-lists plugin checkbox — rendered from list_item meta instead
         break;
       default:
         if (c.content) out.push({ text: c.content, sgr: null });
@@ -93,7 +93,81 @@ function renderInline(theme: Theme, children: Token[], base: string[]): Seg[] {
   return out;
 }
 
-function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][]): void {
+// Renders the single non-list block starting at ts[i] (paragraph_open, hr, fence,
+// blockquote_open, standalone inline, html_block, or default). Pushes its line(s)
+// into out and returns the index after the block.
+function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][]): number {
+  const t = ts[i];
+  switch (t.type) {
+    case 'paragraph_open': {
+      const inline = ts[i + 1];
+      out.push(...splitAtBr(renderInline(rctx.theme, inline.children ?? [], [])));
+      let j = i + 2;
+      while (j < end && ts[j].type !== 'paragraph_close') j++;
+      return j + 1;
+    }
+    case 'hr':
+      out.push([{ text: '─'.repeat(30), sgr: rctx.theme.colors.hr || null }]);
+      return i + 1;
+    case 'fence':
+      // INTERIM (task 1.5 replaces with label + highlightCode)
+      for (const line of t.content.split('\n')) {
+        out.push([{ text: line, sgr: null }]);
+      }
+      return i + 1;
+    case 'blockquote_open': {
+      // INTERIM (task 1.7 adds '│ ' prefix)
+      let depth = 1;
+      let j = i + 1;
+      while (j < end && depth > 0) {
+        if (ts[j].type === 'blockquote_open') depth++;
+        else if (ts[j].type === 'blockquote_close') depth--;
+        j++;
+      }
+      walk(ts, i + 1, j - 1, rctx, out, 0);
+      return j;
+    }
+    case 'table_open': {
+      // INTERIM (task 1.6 replaces)
+      let j = i + 1;
+      let row: string[] = [];
+      while (j < end && ts[j].type !== 'table_close') {
+        const tok = ts[j];
+        if (tok.type === 'th_open' || tok.type === 'td_open') {
+          const inline = ts[j + 1];
+          row.push(segsToString(renderInline(rctx.theme, inline.children ?? [], [])));
+          j += 2;
+          if (j < end && (ts[j].type === 'th_close' || ts[j].type === 'td_close')) j++;
+        } else if (tok.type === 'tr_close') {
+          out.push(row.map((cell) => ({ text: cell, sgr: null })));
+          row = [];
+          j++;
+        } else {
+          j++; // thead_open/tbody_open and anything else
+        }
+      }
+      return j + 1;
+    }
+    case 'inline': {
+      // standalone block-level inline (e.g. inside list items)
+      out.push(...splitAtBr(renderInline(rctx.theme, t.children ?? [], [])));
+      return i + 1;
+    }
+    case 'html_block':
+      return i + 1;
+    default: {
+      // closes, unknown; list_item_open/list_item_close pass through
+      if (t.content) {
+        for (const line of t.content.split('\n')) {
+          out.push([{ text: line, sgr: null }]);
+        }
+      }
+      return i + 1;
+    }
+  }
+}
+
+function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], listLevel: number): void {
   while (i < end) {
     const t = ts[i];
     switch (t.type) {
@@ -109,41 +183,8 @@ function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][]
         i = j + 1;
         break;
       }
-      case 'paragraph_open': {
-        const inline = ts[i + 1];
-        out.push(...splitAtBr(renderInline(rctx.theme, inline.children ?? [], [])));
-        let j = i + 2;
-        while (j < end && ts[j].type !== 'paragraph_close') j++;
-        i = j + 1;
-        break;
-      }
-      case 'hr':
-        out.push([{ text: '─'.repeat(30), sgr: rctx.theme.colors.hr || null }]);
-        i++;
-        break;
-      case 'fence':
-        // INTERIM (task 1.5 replaces with label + highlightCode)
-        for (const line of t.content.split('\n')) {
-          out.push([{ text: line, sgr: null }]);
-        }
-        i++;
-        break;
-      case 'blockquote_open': {
-        // INTERIM (task 1.7 adds '│ ' prefix)
-        let depth = 1;
-        let j = i + 1;
-        while (j < end && depth > 0) {
-          if (ts[j].type === 'blockquote_open') depth++;
-          else if (ts[j].type === 'blockquote_close') depth--;
-          j++;
-        }
-        walk(ts, i + 1, j - 1, rctx, out);
-        i = j;
-        break;
-      }
       case 'bullet_list_open':
       case 'ordered_list_open': {
-        // INTERIM (task 1.4 adds markers + 2-space indent)
         const closeType = t.type === 'bullet_list_open' ? 'bullet_list_close' : 'ordered_list_close';
         let depth = 1;
         let j = i + 1;
@@ -152,53 +193,166 @@ function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][]
           else if (ts[j].type === closeType) depth--;
           j++;
         }
-        walk(ts, i + 1, j - 1, rctx, out);
-        i = j;
-        break;
-      }
-      case 'table_open': {
-        // INTERIM (task 1.6 replaces)
-        let j = i + 1;
-        let row: string[] = [];
-        while (j < end && ts[j].type !== 'table_close') {
-          const tok = ts[j];
-          if (tok.type === 'th_open' || tok.type === 'td_open') {
-            const inline = ts[j + 1];
-            row.push(segsToString(renderInline(rctx.theme, inline.children ?? [], [])));
-            j += 2;
-            if (j < end && (ts[j].type === 'th_close' || ts[j].type === 'td_close')) j++;
-          } else if (tok.type === 'tr_close') {
-            out.push(row.map((cell) => ({ text: cell, sgr: null })));
-            row = [];
-            j++;
-          } else {
-            j++; // thead_open/tbody_open and anything else
-          }
-        }
+        walkList(ts, i + 1, j, rctx, out, listLevel + 1, t.type === 'bullet_list_open' ? 'bullet' : 'ordered');
         i = j + 1;
         break;
       }
-      case 'inline': {
-        // standalone block-level inline (e.g. inside list items)
-        out.push(...splitAtBr(renderInline(rctx.theme, t.children ?? [], [])));
-        i++;
+      default:
+        i = renderOneBlock(ts, i, end, rctx, out);
         break;
-      }
-      case 'html_block':
-        i++;
-        break;
-      default: {
-        // closes, unknown; list_item_open/list_item_close pass through
-        if (t.content) {
-          for (const line of t.content.split('\n')) {
-            out.push([{ text: line, sgr: null }]);
-          }
-        }
-        i++;
-        break;
-      }
     }
   }
+}
+
+function listVisibleLen(marker: Seg[]): number {
+  return marker.reduce((sum, s) => sum + s.text.length, 0);
+}
+
+function listMarkerSegs(rctx: RenderCtx, kind: 'bullet' | 'ordered', n: number, meta: { task?: boolean; checked?: boolean } | null | undefined): Seg[] {
+  const dim = rctx.theme.colors.dim || null;
+  if (meta?.task) {
+    if (meta.checked) {
+      const success = rctx.theme.colors.success || null;
+      return [
+        { text: '[', sgr: dim },
+        { text: 'x', sgr: success },
+        { text: ']', sgr: dim },
+      ];
+    }
+    return [
+      { text: '[', sgr: dim },
+      { text: ' ', sgr: dim },
+      { text: ']', sgr: dim },
+    ];
+  }
+  if (kind === 'ordered') return [{ text: String(n) + '.', sgr: dim }];
+  return [{ text: '•', sgr: dim }];
+}
+
+// Renders the blocks of one list item (ts[i..end), end = matching list_item_close).
+// firstPrefix/continuation alignment: continuation lines get spaces equal to the
+// visible length of the marker plus one trailing space.
+//
+// Nested lists (the markdown-it task-lists style where a more-indented
+// list_item_open sits inside a list block) are rendered "loose": the item's
+// first line carries only its own marker, and the inner items follow with the
+// inner list's own per-item markers (no bullet prefixing on those lines).
+function renderItem(
+  ts: Token[],
+  i: number,
+  end: number,
+  rctx: RenderCtx,
+  out: Seg[][],
+  level: number,
+  marker: Seg[],
+  taskItem: boolean,
+): number {
+  const indent = '  '.repeat(level - 1); // level is 1-based: top-level items at column 0
+  const firstPrefix: Seg[] = (indent ? [{ text: indent, sgr: null }] : [] as Seg[])
+    .concat(marker)
+    .concat([{ text: ' ', sgr: null }]);
+  const contPrefix: Seg[] = [{ text: ' '.repeat(indent.length + listVisibleLen(marker) + 1), sgr: null }];
+
+  const firstLineIdx = out.length;
+  let j = i;
+  let first = true;
+  while (j < end) {
+    const t = ts[j];
+    if (t.type === 'bullet_list_open' || t.type === 'ordered_list_open') {
+      // nested list inside this item
+      const closeType = t.type === 'bullet_list_open' ? 'bullet_list_close' : 'ordered_list_close';
+      const kind: 'bullet' | 'ordered' = t.type === 'bullet_list_open' ? 'bullet' : 'ordered';
+      let depth = 1;
+      let k = j + 1;
+      while (k < end && depth > 0) {
+        if (ts[k].type === t.type) depth++;
+        else if (ts[k].type === closeType) depth--;
+        k++;
+      }
+      if (first) {
+        out.push([...firstPrefix]); // marker-only line so the item is not blank
+        first = false;
+      }
+      walkList(ts, j + 1, k, rctx, out, level + 1, kind);
+      j = k + 1;
+    } else {
+      const before = out.length;
+      j = renderOneBlock(ts, j, end, rctx, out);
+      for (let idx = before; idx < out.length; idx++) {
+        out[idx] = (idx === before && first ? firstPrefix : contPrefix).concat(out[idx]);
+      }
+      first = false;
+    }
+  }
+
+  if (taskItem && out.length > firstLineIdx) {
+    // T4: the task-lists plugin leaves one leading space on the item's first text
+    // token; strip exactly one so the box's trailing space is the only gap.
+    const line = out[firstLineIdx];
+    for (let s = firstPrefix.length; s < line.length; s++) {
+      const seg = line[s];
+      if (seg.text.length === 0) continue;
+      if (seg.text.startsWith(' ')) {
+        seg.text = seg.text.slice(1);
+        if (seg.text.length === 0) line.splice(s, 1);
+      }
+      break;
+    }
+  }
+
+  return j;
+}
+
+// Walks one list's direct children in [i, end) (end = index of matching *_list_close).
+// n = 1-based position within this list (ordered numbering is positional; markdown-it
+// leaves it to us).
+//
+// Nested lists: markdown-it nests a more-indented item inside the outer list block.
+// We render "loose": the inner items are rendered at their own level with their own
+// per-item markers (the outer item already emitted a marker-only line for itself).
+function walkList(
+  ts: Token[],
+  i: number,
+  end: number,
+  rctx: RenderCtx,
+  out: Seg[][],
+  level: number,
+  kind: 'bullet' | 'ordered',
+): number {
+  let n = 0;
+  let j = i;
+  while (j < end) {
+    const t = ts[j];
+    if (t.type === 'list_item_open') {
+      n++;
+      // Find the matching list_item_close (nesting-aware) so renderItem's
+      // boundary is this item, not the whole list.
+      let d = 1;
+      let k = j + 1;
+      while (k < end && d > 0) {
+        if (ts[k].type === 'list_item_open') d++;
+        else if (ts[k].type === 'list_item_close') d--;
+        k++;
+      }
+      const marker = listMarkerSegs(rctx, kind, n, t.meta as { task?: boolean; checked?: boolean } | null | undefined);
+      j = renderItem(ts, j + 1, k - 1, rctx, out, level, marker, t.meta?.task === true) + 1;
+    } else if (t.type === 'bullet_list_open' || t.type === 'ordered_list_open') {
+      // nested list block inside this item: render loose at level + 1
+      const closeType = t.type === 'bullet_list_open' ? 'bullet_list_close' : 'ordered_list_close';
+      let depth = 1;
+      let k = j + 1;
+      while (k < end && depth > 0) {
+        if (ts[k].type === t.type) depth++;
+        else if (ts[k].type === closeType) depth--;
+        k++;
+      }
+      walkList(ts, j + 1, k, rctx, out, level + 1, t.type === 'bullet_list_open' ? 'bullet' : 'ordered');
+      j = k + 1;
+    } else {
+      j++;
+    }
+  }
+  return j;
 }
 
 function splitAtBr(segs: Seg[]): Seg[][] {
@@ -218,6 +372,6 @@ function splitAtBr(segs: Seg[]): Seg[][] {
 
 export function renderTokens(tokens: Token[], rctx: RenderCtx): { lines: RenderedLine[] } {
   const out: Seg[][] = [];
-  walk(tokens, 0, tokens.length, rctx, out);
+  walk(tokens, 0, tokens.length, rctx, out, 0);
   return { lines: out.map((segs) => ({ text: segsToString(segs), links: [] })) };
 }
