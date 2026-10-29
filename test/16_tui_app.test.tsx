@@ -22,6 +22,14 @@ function stripAnsi(s: string): string {
 }
 
 test('App renders the fixture doc with a status bar (capture-stdout pattern, 06 §1)', async () => {
+  // The App's mouse effect (02 §10) attaches a 'data' listener to the test
+  // process's process.stdin and removes it on unmount, but the net-socket
+  // handle stays ref'd and would keep the test process alive. Release it
+  // in teardown (same pattern as test/21).
+  const releaseStdinFixture = () => {
+    process.stdin.pause();
+    process.stdin.unref();
+  };
   const tmp = mkdtempSync(join(tmpdir(), 'trimd-16-'));
   try {
     mkdirSync(join(tmp, 'root'));
@@ -74,6 +82,7 @@ test('App renders the fixture doc with a status bar (capture-stdout pattern, 06 
     const total = doc.lines.length;
     assert.ok(frame.includes('L1 1/' + total), 'status bar line counter present');
   } finally {
+    releaseStdinFixture();
     rmSync(tmp, { recursive: true, force: true });
   }
 });

@@ -1,11 +1,13 @@
 import { Box, Text, useInput, useStdout } from 'ink';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { relative } from 'node:path';
-import type { RenderedDoc, Theme } from '../core/types.js';
+import type { MouseEvt, RenderedDoc, Theme } from '../core/types.js';
 import { paint } from '../core/themes.js';
 import { renderFile } from '../core/pipeline.js';
 import { listEntries } from '../core/resolve.js';
-import { navBack, navForward, navOpen } from '../core/nav.js';
+import { navBack, navForward, navOpen, hitTestDoc, hitTestSidebar } from '../core/nav.js';
+import { MOUSE_ENABLE, MOUSE_DISABLE, createMouseParser } from '../core/mouse.js';
+import { openExternal } from '../core/open.js';
 import type { DocState, Focus, UiState } from '../core/nav.js';
 import DocPane from './DocPane.js';
 import Sidebar from './Sidebar.js';
@@ -85,6 +87,47 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
   const total = docMemo.lines.length;
   const maxTop = Math.max(0, total - paneRows);
   const scrollTop = Math.min(cur.scrollTop, maxTop);
+
+  // 02 §10 / INV-3.6 — mouse: enable SGR 1006 on mount, parse stdin, act on
+  // left-button release. The parser callback reads the latest view through a
+  // ref, so the listener (and the enable/disable mode bytes) attach exactly
+  // once per mount instead of per state change.
+  const view = useRef({ state, doc: docMemo, scrollTop, render });
+  view.current = { state, doc: docMemo, scrollTop, render };
+
+  useEffect(() => {
+    process.stdout.write(MOUSE_ENABLE);
+    const p = createMouseParser((e: MouseEvt) => {
+      if (e.action !== 'release' || e.button !== 0) return;
+      const { state: st, doc, scrollTop: top, render: renderNow } = view.current;
+      if (st.sidebarOpen && e.x < 30) {
+        // INV-3.6 — mouseup in the sidebar region = open that entry.
+        const entry = hitTestSidebar(st.cwd, showHidden, e.y);
+        if (!entry) return;
+        if (entry.isDir) {
+          setState((s) => ({ ...s, cwd: entry.abs, cursor: 0, focus: 'sidebar' }));
+        } else {
+          setState((s) => ({ ...navOpen(s, entry.abs, renderNow), focus: 'doc' }));
+        }
+        return;
+      }
+      // Doc pane starts at terminal column 30 when the sidebar is open;
+      // LinkSpan columns are pane-relative.
+      const docX = e.x - (st.sidebarOpen ? 30 : 0);
+      const span = hitTestDoc(doc, top, docX, e.y);
+      if (!span) return; // unresolved links register no span → no-op
+      if (span.kind === 'http') {
+        openExternal(span.href);
+        return;
+      }
+      setState((s) => ({ ...navOpen(s, span.href, renderNow), focus: 'doc' }));
+    });
+    process.stdin.on('data', p);
+    return () => {
+      process.stdin.removeListener('data', p);
+      process.stdout.write(MOUSE_DISABLE);
+    };
+  }, []);
 
   useInput((input, key) => {
     if (input === 'q') process.exit(0);
