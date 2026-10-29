@@ -135,4 +135,4 @@ try {
   fail(err, !!flags.debug);
 }
 
-render(<App doc={doc} root={root} theme={theme} themeId={theme.id} sidebarOpen={sidebarOpen} showHidden={!!flags.hidden} />);
+render(<App doc={doc} root={root} theme={theme} themeId={theme.id} sidebarOpen={sidebarOpen} showHidden={!!flags.hidden} showFrontmatter={!flags.noFrontmatter} />);

@@ -53,7 +53,7 @@ test('App renders the fixture doc with a status bar (capture-stdout pattern, 06 
     (fakeStdin as unknown as { setRawMode: (e: boolean) => void }).setRawMode = () => {};
 
     const inst = render(
-      <App doc={doc} root={tmp} theme={DEFAULT_THEME} themeId="default" sidebarOpen={false} showHidden={false} />,
+      <App doc={doc} root={tmp} theme={DEFAULT_THEME} themeId="default" sidebarOpen={false} showHidden={false} showFrontmatter={true} />,
       { stdout: out, stdin: fakeStdin },
     );
     inst.unmount();
