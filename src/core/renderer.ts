@@ -1,7 +1,8 @@
 // 02 §8 — renderer conventions (task 1.6: lists + fences + tables implemented; remaining INTERIM: blockquote prefix (1.7), links (1.7))
 
 import type { Token } from 'markdown-it';
-import type { RenderedLine, Theme } from './types.js';
+import { existsSync } from 'node:fs';
+import type { LinkSpan, RenderedLine, Theme } from './types.js';
 import { fenceLabelLang, highlightCode } from './highlight.js';
 
 export interface RenderCtx {
@@ -12,8 +13,10 @@ export interface RenderCtx {
 }
 
 // One styled run. sgr = SGR parameter string (e.g. '1;38;5;255'), null = no escape.
-// br marks a hard-break (new logical line).
-interface Seg { text: string; sgr: string | null; br?: boolean; }
+// br marks a hard-break (new logical line); link marks an OSC 8 span (02 §7).
+type LinkKind = 'file' | 'http' | 'wikilink' | 'embed';
+interface LinkInfo { href: string; kind: LinkKind; target?: string; resolved?: boolean; }
+interface Seg { text: string; sgr: string | null; br?: boolean; link?: LinkInfo | null; }
 
 function join(stack: string[]): string | null {
   return stack.length ? stack.join(';') : null;
@@ -33,12 +36,20 @@ function headingSgr(theme: Theme, level: number): string | null {
 }
 
 function segsToString(segs: Seg[]): string {
-  return segs.map((s) => (s.sgr ? '\x1b[' + s.sgr + 'm' + s.text + '\x1b[0m' : s.text)).join('');
+  return segs
+    .map((s) => {
+      const body = s.sgr ? '\x1b[' + s.sgr + 'm' + s.text + '\x1b[0m' : s.text;
+      if (!s.link) return body;
+      // 02 §7 — exact OSC 8 bytes: open before the SGR, close after the reset
+      const url = s.link.kind === 'file' ? 'file://' + s.link.href : s.link.href;
+      return '\x1b]8;url=' + url + '\x1b\\' + body + '\x1b]8;;\x1b\\';
+    })
+    .join('');
 }
 
 // 02 §8 — visible width: strip SGR and OSC 8 sequences (exact regexes), then count.
 export function visibleWidth(s: string): number {
-  return s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\\]*\\/g, '').length;
+  return s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\]]*\\/g, '').length;
 }
 
 function segsVisible(segs: Seg[]): number {
@@ -65,22 +76,47 @@ function truncateStyled(segs: Seg[], cap: number): Seg[] {
   return out;
 }
 
-function renderInline(theme: Theme, children: Token[], base: string[]): Seg[] {
+// 02 §7 / INV-1.7 — classify a markdown link href.
+//   http(s):               → link color, span kind 'http', OSC 8 url = href
+//   #anchor:               → dim, no span, no warning (anchor-only)
+//   local + resolved +     → link color, span kind 'file' (href = abs path),
+//     existsSync                 OSC 8 url = 'file://' + abs
+//   local + unresolved/missing → dim text + ' ⚠', no span, no OSC 8
+function linkInfo(rctx: RenderCtx, href: string): { sgr: string | null; span: LinkInfo | null; warn: boolean } {
+  const theme = rctx.theme;
+  if (href.startsWith('http://') || href.startsWith('https://')) {
+    return { sgr: theme.colors.link || null, span: { href, kind: 'http', resolved: true }, warn: false };
+  }
+  if (href.startsWith('#')) {
+    return { sgr: theme.colors.dim || null, span: null, warn: false };
+  }
+  const abs = rctx.resolve(href);
+  if (abs === null || !existsSync(abs)) {
+    return { sgr: theme.colors.dim || null, span: null, warn: true };
+  }
+  return { sgr: theme.colors.link || null, span: { href: abs, kind: 'file', resolved: true }, warn: false };
+}
+
+function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[] {
+  const theme = rctx.theme;
   const stack = [...base];
   const out: Seg[] = [];
+  let link: LinkInfo | null = null;
+  let linkSgr: string | null = null;
+  let linkWarn = false;
   for (const c of children) {
     switch (c.type) {
       case 'text':
-        if (c.content) out.push({ text: c.content, sgr: join(stack) });
+        if (c.content) out.push({ text: c.content, sgr: join(stack), link });
         break;
       case 'softbreak':
-        out.push({ text: ' ', sgr: join(stack) });
+        out.push({ text: ' ', sgr: join(stack), link });
         break;
       case 'hardbreak':
         out.push({ text: '', sgr: null, br: true });
         break;
       case 'code_inline':
-        out.push({ text: c.content, sgr: c.content ? theme.colors.inlineCode || null : null });
+        out.push({ text: c.content, sgr: c.content ? theme.colors.inlineCode || null : null, link });
         break;
       case 'em_open':
         stack.push(emphSgr(theme, 'italic'));
@@ -100,10 +136,23 @@ function renderInline(theme: Theme, children: Token[], base: string[]): Seg[] {
       case 's_close':
         stack.pop();
         break;
-      case 'link_open':
-      case 'link_close':
-        // INTERIM (task 1.7) — OSC 8 spans added later
+      case 'link_open': {
+        const href = String((c.attrs ?? []).find((a) => a[0] === 'href')?.[1] ?? '');
+        const li = linkInfo(rctx, href);
+        link = li.span;
+        linkSgr = li.sgr;
+        linkWarn = li.warn;
+        if (linkSgr !== null) stack.push(linkSgr);
         break;
+      }
+      case 'link_close': {
+        if (linkSgr !== null) stack.pop();
+        if (linkWarn) out.push({ text: ' \u26a0', sgr: theme.colors.dim || null });
+        link = null;
+        linkSgr = null;
+        linkWarn = false;
+        break;
+      }
       case 'image': {
         // INV-1.8 placeholder
         // c.content holds the alt text; the src URL lives in the 'src' attr
@@ -131,7 +180,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
   switch (t.type) {
     case 'paragraph_open': {
       const inline = ts[i + 1];
-      out.push(...splitAtBr(renderInline(rctx.theme, inline.children ?? [], [])));
+      out.push(...splitAtBr(renderInline(rctx, inline.children ?? [], [])));
       let j = i + 2;
       while (j < end && ts[j].type !== 'paragraph_close') j++;
       return j + 1;
@@ -154,7 +203,9 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       return i + 1;
     }
     case 'blockquote_open': {
-      // INTERIM (task 1.7 adds '│ ' prefix)
+      // INV-1.6 — '│ ' prefix (quote color) on every inner line; nested
+      // blockquotes add their own prefix, so nesting yields '│ │ '
+      const inner: Seg[][] = [];
       let depth = 1;
       let j = i + 1;
       while (j < end && depth > 0) {
@@ -162,7 +213,8 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
         else if (ts[j].type === 'blockquote_close') depth--;
         j++;
       }
-      walk(ts, i + 1, j - 1, rctx, out, 0);
+      walk(ts, i + 1, j - 1, rctx, inner, 0);
+      for (const l of inner) out.push([{ text: '│ ', sgr: rctx.theme.colors.quote || null }, ...l]);
       return j;
     }
     case 'table_open': {
@@ -184,7 +236,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
           j++;
         } else if (tok.type === 'th_open' || tok.type === 'td_open') {
           const inline = ts[j + 1];
-          cells.push(renderInline(rctx.theme, inline.children ?? [], inHead ? [headSgr] : []));
+          cells.push(renderInline(rctx, inline.children ?? [], inHead ? [headSgr] : []));
           j += 2;
           if (j < end && (ts[j].type === 'th_close' || ts[j].type === 'td_close')) j++;
         } else if (tok.type === 'tr_close') {
@@ -220,7 +272,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
     }
     case 'inline': {
       // standalone block-level inline (e.g. inside list items)
-      out.push(...splitAtBr(renderInline(rctx.theme, t.children ?? [], [])));
+      out.push(...splitAtBr(renderInline(rctx, t.children ?? [], [])));
       return i + 1;
     }
     case 'html_block':
@@ -246,7 +298,7 @@ function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][]
         const inline = ts[i + 1];
         const hs = headingSgr(rctx.theme, level);
         const base = hs !== null ? [hs] : [];
-        out.push(renderInline(rctx.theme, inline.children ?? [], base));
+        out.push(renderInline(rctx, inline.children ?? [], base));
         // advance past heading_close
         let j = i + 2;
         while (j < end && ts[j].type !== 'heading_close') j++;
@@ -440,8 +492,40 @@ function splitAtBr(segs: Seg[]): Seg[][] {
   return chunks;
 }
 
+// INV-1.7 — columns exactly cover the visible link text (ANSI stripped);
+// consecutive segs of one link group into one span.
+function lineSpans(segs: Seg[], line: number): LinkSpan[] {
+  const spans: LinkSpan[] = [];
+  let col = 0;
+  let start: number | null = null;
+  let cur: LinkInfo | null = null;
+  const flush = (end: number): void => {
+    if (cur === null || start === null) return;
+    const span: LinkSpan = { line, startCol: start, endCol: end, href: cur.href, kind: cur.kind };
+    if (cur.target !== undefined) span.target = cur.target;
+    if (cur.resolved !== undefined) span.resolved = cur.resolved;
+    spans.push(span);
+    cur = null;
+    start = null;
+  };
+  for (const s of segs) {
+    if (s.link) {
+      if (cur === null) {
+        cur = s.link;
+        start = col;
+      }
+    } else {
+      flush(col);
+    }
+    col += visibleWidth(s.text);
+  }
+  flush(col);
+  return spans;
+}
+
 export function renderTokens(tokens: Token[], rctx: RenderCtx): { lines: RenderedLine[] } {
   const out: Seg[][] = [];
   walk(tokens, 0, tokens.length, rctx, out, 0);
-  return { lines: out.map((segs) => ({ text: segsToString(segs), links: [] })) };
+  const lines: RenderedLine[] = out.map((segs, line) => ({ text: segsToString(segs), links: lineSpans(segs, line) }));
+  return { lines };
 }
