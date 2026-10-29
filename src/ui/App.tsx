@@ -2,10 +2,10 @@ import { Box, Text, useInput, useStdout } from 'ink';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { relative } from 'node:path';
 import type { MouseEvt, RenderedDoc, Theme } from '../core/types.js';
-import { paint } from '../core/themes.js';
+import { paint, allThemeIds, BUILTIN_THEMES, loadUserTheme } from '../core/themes.js';
 import { renderFile } from '../core/pipeline.js';
 import { listEntries } from '../core/resolve.js';
-import { navBack, navForward, navOpen, hitTestDoc, hitTestSidebar } from '../core/nav.js';
+import { navBack, navForward, navOpen, nextTheme, hitTestDoc, hitTestSidebar } from '../core/nav.js';
 import { MOUSE_ENABLE, MOUSE_DISABLE, createMouseParser } from '../core/mouse.js';
 import { openExternal } from '../core/open.js';
 import type { DocState, Focus, UiState } from '../core/nav.js';
@@ -70,14 +70,22 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
   const paneRows = Math.max(1, (stdout.rows || 24) - 1);
   const width = Math.max((stdout.columns || 80) - (state.sidebarOpen ? 30 : 0) - 2, 40);
 
-  const render = (abs: string) =>
-    renderFile(abs, { root, width, theme, showFrontmatter, showHidden });
+  // 02 §11 / INV-3.8 — the theme object follows state.themeId (T cycles it
+  // via nextTheme over allThemeIds()). The initial prop's theme is kept
+  // verbatim, which covers PLAIN_THEME (NO_COLOR) that is not a builtin/user id.
+  const themeObj = useMemo(() => {
+    if (state.themeId === theme.id) return theme;
+    return BUILTIN_THEMES[state.themeId] ?? loadUserTheme(state.themeId) ?? theme;
+  }, [state.themeId]);
 
-  // 02 §11 — re-render the doc via renderFile on [abs, width, reloadTick]
-  // (INV-3.2: sidebar toggle re-wraps at the new width).
+  const render = (abs: string) =>
+    renderFile(abs, { root, width, theme: themeObj, showFrontmatter, showHidden });
+
+  // 02 §11 — re-render the doc via renderFile on [abs, width, reloadTick, themeId]
+  // (INV-3.2: sidebar toggle re-wraps at the new width; INV-3.8: T re-themes).
   const docMemo = useMemo(
-    () => renderFile(cur.abs, { root, width, theme, showFrontmatter, showHidden }),
-    [cur.abs, width, state.reloadTick],
+    () => renderFile(cur.abs, { root, width, theme: themeObj, showFrontmatter, showHidden }),
+    [cur.abs, width, state.reloadTick, state.themeId],
   );
   const entries = useMemo(
     () => listEntries(state.cwd, showHidden),
@@ -147,6 +155,8 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
     if (input === 'F') { setState((st) => navForward(st)); return; }
     // INV-3.5 — r = reload (re-render the current doc).
     if (input === 'r') { setState((st) => ({ ...st, reloadTick: st.reloadTick + 1 })); return; }
+    // INV-3.8 — T cycles the theme (nextTheme over allThemeIds()).
+    if (input === 'T') { setState((st) => nextTheme(st, allThemeIds())); return; }
     // INV-3.7 — ? opens the help overlay.
     if (input === '?') { setState((st) => ({ ...st, help: true })); return; }
 
@@ -209,7 +219,7 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
             <DocPane doc={docMemo} scrollTop={scrollTop} rows={paneRows} width={width} />
           </Box>
         )}
-      <StatusBar theme={theme} path={path} line={line} total={total} themeId={state.themeId} warnings={docMemo.warnings} />
+      <StatusBar theme={themeObj} path={path} line={line} total={total} themeId={state.themeId} warnings={docMemo.warnings} />
     </Box>
   );
 }
