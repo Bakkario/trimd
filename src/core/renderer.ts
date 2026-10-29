@@ -1,4 +1,4 @@
-// 02 §8 — renderer conventions (task 1.5: lists + fences implemented; remaining INTERIM: table (1.6), blockquote prefix (1.7), links (1.7))
+// 02 §8 — renderer conventions (task 1.6: lists + fences + tables implemented; remaining INTERIM: blockquote prefix (1.7), links (1.7))
 
 import type { Token } from 'markdown-it';
 import type { RenderedLine, Theme } from './types.js';
@@ -34,6 +34,35 @@ function headingSgr(theme: Theme, level: number): string | null {
 
 function segsToString(segs: Seg[]): string {
   return segs.map((s) => (s.sgr ? '\x1b[' + s.sgr + 'm' + s.text + '\x1b[0m' : s.text)).join('');
+}
+
+// 02 §8 — visible width: strip SGR and OSC 8 sequences (exact regexes), then count.
+export function visibleWidth(s: string): number {
+  return s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\\]*\\/g, '').length;
+}
+
+function segsVisible(segs: Seg[]): number {
+  return segs.reduce((a, s) => a + visibleWidth(s.text), 0);
+}
+
+// 02 §8 — cap cell content to `cap` visible chars; overflow → `…` (in the cut seg's style).
+function truncateStyled(segs: Seg[], cap: number): Seg[] {
+  const out: Seg[] = [];
+  let used = 0;
+  for (const s of segs) {
+    if (used >= cap) break;
+    if (s.text.length === 0) continue;
+    if (used + s.text.length <= cap) {
+      out.push(s);
+      used += s.text.length;
+    } else {
+      const keep = cap - used - 1;
+      if (keep > 0) out.push({ text: s.text.slice(0, keep), sgr: s.sgr });
+      out.push({ text: '…', sgr: s.sgr });
+      break;
+    }
+  }
+  return out;
 }
 
 function renderInline(theme: Theme, children: Token[], base: string[]): Seg[] {
@@ -137,22 +166,54 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       return j;
     }
     case 'table_open': {
-      // INTERIM (task 1.6 replaces)
+      // 02 §8 / INV-1.5 — bold tableHead header, tableBorder ─ separator,
+      // aligned columns (cap 40, overflow → …), 1-space padding, no pipes
+      const CAP = 40;
+      const headSgr = rctx.theme.colors.tableHead ? '1;' + rctx.theme.colors.tableHead : '1';
+      const rows: { header: boolean; cells: Seg[][] }[] = [];
       let j = i + 1;
-      let row: string[] = [];
+      let cells: Seg[][] = [];
+      let inHead = false;
       while (j < end && ts[j].type !== 'table_close') {
         const tok = ts[j];
-        if (tok.type === 'th_open' || tok.type === 'td_open') {
+        if (tok.type === 'thead_open') {
+          inHead = true;
+          j++;
+        } else if (tok.type === 'thead_close') {
+          inHead = false;
+          j++;
+        } else if (tok.type === 'th_open' || tok.type === 'td_open') {
           const inline = ts[j + 1];
-          row.push(segsToString(renderInline(rctx.theme, inline.children ?? [], [])));
+          cells.push(renderInline(rctx.theme, inline.children ?? [], inHead ? [headSgr] : []));
           j += 2;
           if (j < end && (ts[j].type === 'th_close' || ts[j].type === 'td_close')) j++;
         } else if (tok.type === 'tr_close') {
-          out.push(row.map((cell) => ({ text: cell, sgr: null })));
-          row = [];
+          rows.push({ header: inHead, cells });
+          cells = [];
           j++;
         } else {
-          j++; // thead_open/tbody_open and anything else
+          j++; // tbody_open and anything else
+        }
+      }
+      const cols = rows.reduce((m, r) => Math.max(m, r.cells.length), 0);
+      const widths: number[] = new Array(cols).fill(0);
+      for (const r of rows) {
+        for (let c = 0; c < r.cells.length; c++) {
+          widths[c] = Math.min(CAP, Math.max(widths[c], segsVisible(r.cells[c])));
+        }
+      }
+      for (const r of rows) {
+        const line: Seg[] = [];
+        for (let c = 0; c < cols; c++) {
+          if (c > 0) line.push({ text: ' ', sgr: null });
+          const segs = truncateStyled(r.cells[c] ?? [], CAP);
+          const vis = segsVisible(segs);
+          line.push(...segs);
+          if (c < cols - 1) line.push({ text: ' '.repeat(widths[c] - vis), sgr: null });
+        }
+        out.push(line);
+        if (r.header) {
+          out.push([{ text: widths.map((w) => '─'.repeat(w)).join(' '), sgr: rctx.theme.colors.tableBorder || null }]);
         }
       }
       return j + 1;
