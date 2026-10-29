@@ -53,7 +53,8 @@ function segsToString(segs: Seg[]): string {
       const body = s.sgr ? '\x1b[' + s.sgr + 'm' + s.text + '\x1b[0m' : s.text;
       if (!s.link) return body;
       // 02 §7 — exact OSC 8 bytes: open before the SGR, close after the reset
-      const url = s.link.kind === 'file' ? 'file://' + s.link.href : s.link.href;
+      const local = s.link.kind === 'file' || s.link.kind === 'wikilink' || s.link.kind === 'embed';
+      const url = local ? 'file://' + s.link.href : s.link.href;
       return '\x1b]8;url=' + url + '\x1b\\' + body + '\x1b]8;;\x1b\\';
     })
     .join('');
@@ -163,6 +164,20 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
         link = null;
         linkSgr = null;
         linkWarn = false;
+        break;
+      }
+      case 'wikilink': {
+        // INV-2.1/2.2 — `#heading` stripped for resolution and display
+        const meta = c.meta as { target: string; label: string } | undefined;
+        const target = (meta?.target ?? c.content ?? '').split('#')[0];
+        const display = (meta?.label ?? c.content ?? '').split('#')[0];
+        const abs = target === '' ? null : rctx.resolve(target);
+        if (abs !== null && existsSync(abs)) {
+          out.push({ text: display, sgr: theme.colors.link || null, link: { href: abs, kind: 'wikilink', target, resolved: true } });
+        } else {
+          out.push({ text: display, sgr: theme.colors.dim || null });
+          out.push({ text: ' \u26a0', sgr: theme.colors.dim || null });
+        }
         break;
       }
       case 'image': {
