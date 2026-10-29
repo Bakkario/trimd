@@ -529,3 +529,170 @@ export function renderTokens(tokens: Token[], rctx: RenderCtx): { lines: Rendere
   const lines: RenderedLine[] = out.map((segs, line) => ({ text: segsToString(segs), links: lineSpans(segs, line) }));
   return { lines };
 }
+
+// ── Wrap (task 1.8) — 02 §8 / INV-1.10 ────────────────────────────────────
+// Greedy word wrap on visible text. ANSI segments stay attached to their
+// characters: the SGR (and OSC 8 span) is re-emitted on every physical
+// fragment. A LinkSpan crossing a wrap is split — each physical fragment
+// gets its own span (same href/kind, remapped line/startCol/endCol).
+
+interface WTok { text: string; sgr: string | null; url: string | null; }
+
+// Inverse of segsToString: tokenizes a rendered line's text into
+// (content, sgr, osc-url) segments. Plain runs, SGR-styled runs, and OSC 8
+// spans (optionally wrapping a styled run) are the only forms produced.
+function parseLineText(text: string): WTok[] {
+  const out: WTok[] = [];
+  let i = 0;
+  let plainStart = 0;
+  const flushPlain = (): void => {
+    if (i > plainStart) out.push({ text: text.slice(plainStart, i), sgr: null, url: null });
+    plainStart = i;
+  };
+  while (i < text.length) {
+    if (text[i] !== '\x1b') { i++; continue; }
+    flushPlain();
+    if (text[i + 1] === '[') {
+      const m = text.indexOf('m', i + 2);
+      const end = text.indexOf('\x1b[0m', m + 1);
+      out.push({ text: text.slice(m + 1, end), sgr: text.slice(i + 2, m), url: null });
+      i = end + 4; // \x1b[0m is 4 chars
+      plainStart = i;
+    } else {
+      const c1 = text.indexOf('\x1b\\', i);
+      const c2 = text.indexOf('\x1b]8;;\x1b\\', c1 + 2);
+      const content = text.slice(c1 + 2, c2);
+      let sgr: string | null = null;
+      let body = content;
+      if (content.startsWith('\x1b[') && content.endsWith('\x1b[0m')) {
+        const m2 = content.indexOf('m', 2);
+        sgr = content.slice(2, m2);
+        body = content.slice(m2 + 1, content.length - 4); // reset is 4 chars
+      }
+      out.push({ text: body, sgr, url: text.slice(i + 8, c1) });
+      i = c2 + 7;
+      plainStart = i;
+    }
+  }
+  flushPlain();
+  return out;
+}
+export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] {
+  const out: RenderedLine[] = [];
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    const toks = parseLineText(line.text);
+    const spanAt = (col: number): LinkSpan | undefined =>
+      line.links.find((s) => s.startCol <= col && col < s.endCol);
+    const units: { text: string; tok: WTok; oldCol: number }[] = [];
+    {
+      let col = 0;
+      for (const tok of toks) {
+        let k = 0;
+        while (k < tok.text.length) {
+          const space = tok.text[k] === ' ';
+          let e = k;
+          while (e < tok.text.length && (tok.text[e] === ' ') === space) e++;
+          units.push({ text: tok.text.slice(k, e), tok, oldCol: col + k });
+          k = e;
+        }
+        col += tok.text.length;
+      }
+    }
+    const entries: { word: string; tok: WTok; oldCol: number; trail: string; trailTok: WTok | null }[] = [];
+    let u = 0;
+    while (u < units.length) {
+      while (u < units.length && units[u].text.trim() === '') u++;
+      if (u >= units.length) break;
+      const wu = units[u];
+      const ent: { word: string; tok: WTok; oldCol: number; trail: string; trailTok: WTok | null } = { word: wu.text, tok: wu.tok, oldCol: wu.oldCol, trail: '', trailTok: null };
+      entries.push(ent);
+      u++;
+      while (u < units.length && units[u].text.trim() === '') {
+        ent.trail += units[u].text;
+        ent.trailTok = units[u].tok;
+        u++;
+      }
+    }
+    interface Frag { text: string; tok: WTok; oldCol: number; newCol: number; }
+    const physLines: Frag[][] = [];
+    let cur: Frag[] = [];
+    let curW = 0;
+    const pushLine = (): void => {
+      if (cur.length) { physLines.push(cur); cur = []; curW = 0; }
+    };
+    const emitWord = (ent: { word: string; tok: WTok; oldCol: number }): void => {
+      let pos = 0;
+      while (pos < ent.word.length) {
+        if (curW >= width) pushLine();
+        const take = Math.min(width - curW, ent.word.length - pos);
+        cur.push({ text: ent.word.slice(pos, pos + take), tok: ent.tok, oldCol: ent.oldCol + pos, newCol: curW });
+        curW += take;
+        pos += take;
+      }
+    };
+    for (let e = 0; e < entries.length; e++) {
+      const ent = entries[e];
+      let sp = '';
+      let spTok: WTok | null = null;
+      if (e > 0) { sp = entries[e - 1].trail; spTok = entries[e - 1].trailTok; }
+      if (cur.length === 0 || curW + sp.length + ent.word.length > width) {
+        pushLine();
+        emitWord(ent);
+      } else {
+        if (sp.length) cur.push({ text: sp, tok: spTok ?? ent.tok, oldCol: ent.oldCol - sp.length, newCol: curW });
+        curW += sp.length;
+        emitWord(ent);
+      }
+    }
+    pushLine();
+    if (physLines.length === 0) physLines.push([]);
+    for (let pi = 0; pi < physLines.length; pi++) {
+      const frs = physLines[pi];
+      let text = '';
+      const links: LinkSpan[] = [];
+      let col = 0;
+      let runStart = -1;
+      let runEnd = 0;
+      let runSpan: LinkSpan | null = null;
+      const flushRun = (): void => {
+        if (runSpan !== null) {
+          const s: LinkSpan = { line: pi, startCol: runStart, endCol: runEnd, href: runSpan.href, kind: runSpan.kind };
+          if (runSpan.target !== undefined) s.target = runSpan.target;
+          if (runSpan.resolved !== undefined) s.resolved = runSpan.resolved;
+          links.push(s);
+        }
+        runSpan = null;
+        runStart = -1;
+      };
+      for (const f of frs) {
+        if (f.tok.url !== null) {
+          text +=
+            '\x1b]8;url=' + f.tok.url + '\x1b\\' +
+            (f.tok.sgr ? '\x1b[' + f.tok.sgr + 'm' : '') +
+            f.text +
+            (f.tok.sgr ? '\x1b[0m' : '') +
+            '\x1b]8;;\x1b\\';
+          const s = spanAt(f.oldCol);
+          if (runSpan !== null && s === runSpan) {
+            runEnd = col + f.text.length;
+          } else {
+            flushRun();
+            if (s !== undefined) {
+              runSpan = s;
+              runStart = col;
+              runEnd = col + f.text.length;
+            }
+          }
+        } else {
+          text += f.tok.sgr ? '\x1b[' + f.tok.sgr + 'm' + f.text + '\x1b[0m' : f.text;
+          flushRun();
+        }
+        col += f.text.length;
+      }
+      flushRun();
+      out.push({ text, links });
+    }
+  }
+  return out;
+}
