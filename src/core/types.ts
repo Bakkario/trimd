@@ -73,7 +73,8 @@ export interface Config {
   showFrontmatter: boolean;
   sidebarOpen: boolean;
   showHidden: boolean;
-  width: number | null;
+  root?: string;
+  width?: number;
 }
 
 export interface MouseEvt {

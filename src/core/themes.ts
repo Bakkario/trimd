@@ -251,7 +251,7 @@ export function resolveTheme(
   flags: { theme?: string | null },
   cfg: Config,
 ): Theme {
-  if ((env.NO_COLOR !== undefined && env.NO_COLOR !== '') || env.TERM === 'dumb') {
+  if (env.NO_COLOR !== undefined || env.TERM === 'dumb') {
     return PLAIN_THEME;
   }
   const id = flags.theme || cfg.theme || 'default';
