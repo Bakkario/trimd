@@ -1,0 +1,93 @@
+import { readFileSync } from 'node:fs';
+import type { Token } from 'markdown-it';
+import { basename, dirname } from 'node:path';
+import type { FrontmatterMeta, RenderedDoc, Theme } from './types.js';
+import { FileError, FileMissingError } from './types.js';
+import { extractFrontmatter, renderMeta } from './frontmatter.js';
+import { parseTokens } from './parse.js';
+import { renderTokens, wrapLines, type RenderCtx } from './renderer.js';
+import { buildIndex, makeResolver, type RootIndex } from './resolve.js';
+
+// 02 §5 — exact pipeline: read → frontmatter → parse → render → wrap → meta → title → warnings.
+
+export interface PipelineCtx {
+  root: string; // absolute
+  width: number; // effective render width (already minus sidebar)
+  theme: Theme;
+  showFrontmatter: boolean;
+  showHidden?: boolean;
+}
+
+let indexRoot: string | null = null;
+let indexHidden: boolean = false;
+let index: RootIndex | null = null;
+
+function getResolver(ctx: PipelineCtx): (t: string) => string | null {
+  const showHidden = ctx.showHidden ?? false;
+  if (index === null || indexRoot !== ctx.root || indexHidden !== showHidden) {
+    index = buildIndex(ctx.root, showHidden);
+    indexRoot = ctx.root;
+    indexHidden = showHidden;
+  }
+  return makeResolver(index);
+}
+
+const SGR_RE = /\x1b\[[0-9;]*m/g;
+const OSC_RE = /\x1b\]8;[^\]]*\\/g;
+
+function visible(s: string): string {
+  return s.replace(SGR_RE, '').replace(OSC_RE, '');
+}
+
+function titleOf(meta: FrontmatterMeta | null, tokens: Token[], abs: string): string {
+  if (meta !== null && meta.valid) {
+    const t = (meta.data as Record<string, unknown> | null)?.['title'];
+    if (typeof t === 'string' && t !== '') return t;
+  }
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].type === 'heading_open' && tokens[i].markup.length === 1) {
+      const inline = tokens[i + 1];
+      const v = (inline.children ?? [])
+        .filter((c) => c.type === 'text' || c.type === 'code_inline')
+        .map((c) => c.content)
+        .join('');
+      if (v.trim() !== '') return v.trim();
+      break;
+    }
+  }
+  const b = basename(abs);
+  const dot = b.lastIndexOf('.');
+  return dot > 0 ? b.slice(0, dot) : b;
+}
+
+export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
+  let text: string;
+  try {
+    text = readFileSync(abs, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new FileMissingError('file not found: ' + abs);
+    }
+    throw new FileError('cannot read ' + abs + ': ' + (err as Error).message);
+  }
+  const { meta, body } = extractFrontmatter(text);
+  const tokens = parseTokens(body);
+  const rctx: RenderCtx = {
+    theme: ctx.theme,
+    width: ctx.width,
+    sourceDir: dirname(abs),
+    resolve: getResolver(ctx),
+  };
+  const { lines } = renderTokens(tokens, rctx);
+  const wrapped = wrapLines(lines, ctx.width);
+  const outLines: typeof wrapped = [...wrapped];
+  if (ctx.showFrontmatter && meta) {
+    outLines.unshift(...renderMeta(meta, ctx.theme));
+  }
+  const title = titleOf(meta, tokens, abs);
+  let n = 0;
+  for (const l of outLines) n += (visible(l.text).match(/ \u26a0/g) ?? []).length;
+  const warnings: string[] = [];
+  if (n > 0) warnings.push(n + ' unresolved links');
+  return { lines: outLines, meta, title, warnings, source: abs };
+}
