@@ -171,6 +171,20 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
         out.push({ text: c.content, sgr: theme.colors.tag || null });
         break;
       }
+      case 'embed': {
+        // INV-2.6 — dim ▸ note: label; resolved → clickable, else dim ⚠
+        const meta = c.meta as { target: string; label: string } | undefined;
+        const target = (meta?.target ?? c.content ?? '').split('#')[0];
+        const label = meta?.label ?? c.content ?? target;
+        const abs = target === '' ? null : rctx.resolve(target);
+        if (abs !== null && existsSync(abs)) {
+          out.push({ text: '\u25b8 note: ' + label, sgr: theme.colors.dim || null, link: { href: abs, kind: 'embed', target, resolved: true } });
+        } else {
+          out.push({ text: '\u25b8 note: ' + label, sgr: theme.colors.dim || null });
+          out.push({ text: ' \u26a0', sgr: theme.colors.dim || null });
+        }
+        break;
+      }
       case 'wikilink': {
         // INV-2.1/2.2 — `#heading` stripped for resolution and display
         const meta = c.meta as { target: string; label: string } | undefined;
