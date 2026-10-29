@@ -70,3 +70,17 @@ test('empty logical line yields one empty physical line', () => {
   assert.equal(w[0].text, '');
   assert.equal(w[0].links.length, 0);
 });
+
+test('SGR runs closed by per-code resets (no \\x1b[0m), as cli-highlight emits, tokenize and wrap without loss', () => {
+  const strip = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, '');
+  // unbroken line: exact cli-highlight shape (no \x1b[0m anywhere)
+  const t = '\x1b[34mconst\x1b[39m x = \x1b[32m1\x1b[39m;';
+  const w = wrapLines([{ text: t, links: [] }], 80);
+  assert.equal(w.length, 1);
+  assert.equal(strip(w[0].text), 'const x = 1;');
+  // forced wrap: visible chars survive in order, every physical line within width
+  const long = '\x1b[34mabcdef\x1b[39m' + ' g'.repeat(30) + '\x1b[32mz\x1b[39m';
+  const w2 = wrapLines([{ text: long, links: [] }], 20);
+  for (const l of w2) assert.ok(visibleWidth(l.text) <= 20, 'line over width: ' + l.text);
+  assert.equal(w2.map((l) => strip(l.text)).join(' ').replace(/\s/g, ''), strip(long).replace(/\s/g, ''));
+});

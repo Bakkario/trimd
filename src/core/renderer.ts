@@ -619,26 +619,67 @@ export function renderTokens(tokens: Token[], rctx: RenderCtx): { lines: Rendere
 
 interface WTok { text: string; sgr: string | null; url: string | null; }
 
+// SGR parameter bookkeeping for parseLineText. Only the codes chalk (the
+// cli-highlight backend) and paint() actually emit are modelled:
+// 0/22/23/24/29 turn attributes off, 39/49 reset fg/bg color, 3x/9x/38;…
+// and 4x/10x/48;… set color, everything else is tracked as a bare on-code.
+const SGR_FG = /^(3[0-7]|9[0-7])$/;
+const SGR_BG = /^(4[0-7]|10[0-7])$/;
+function applySgr(open: string[], p: string): void {
+  const isFg = (o: string): boolean => SGR_FG.test(o) || o.startsWith('38;');
+  const isBg = (o: string): boolean => SGR_BG.test(o) || o.startsWith('48;');
+  const drop = (pred: (o: string) => boolean): void => {
+    for (let j = open.length - 1; j >= 0; j--) if (pred(open[j])) open.splice(j, 1);
+  };
+  if (p === '0') open.length = 0;
+  else if (p === '22') drop((o) => o === '1' || o === '2');
+  else if (p === '23') drop((o) => o === '3');
+  else if (p === '24') drop((o) => o === '4');
+  else if (p === '29') drop((o) => o === '9');
+  else if (p === '39') drop(isFg);
+  else if (p === '49') drop(isBg);
+  else if (SGR_FG.test(p)) { drop(isFg); open.push(p); }
+  else if (SGR_BG.test(p)) { drop(isBg); open.push(p); }
+  else open.push(p);
+}
+
 // Inverse of segsToString: tokenizes a rendered line's text into
 // (content, sgr, osc-url) segments. Plain runs, SGR-styled runs, and OSC 8
 // spans (optionally wrapping a styled run) are the only forms produced.
+// An SGR opens a style for the content that follows; the run ends at the
+// next escape. The close form is NOT assumed to be \x1b[0m:
+// cli-highlight/chalk emits per-code resets (\x1b[39m, \x1b[22m, …) and
+// compound opens (\x1b[2m\x1b[36m) merge into one run. wrapLines re-emits
+// every run in the normalized \x1b[…m…\x1b[0m form, so the reset code is
+// irrelevant here.
 function parseLineText(text: string): WTok[] {
   const out: WTok[] = [];
+  const open: string[] = [];
   let i = 0;
-  let plainStart = 0;
-  const flushPlain = (): void => {
-    if (i > plainStart) out.push({ text: text.slice(plainStart, i), sgr: null, url: null });
-    plainStart = i;
+  let runStart = 0;
+  const flush = (at: number): void => {
+    if (at > runStart) out.push({ text: text.slice(runStart, at), sgr: open.length > 0 ? open.join(';') : null, url: null });
+    runStart = at;
   };
   while (i < text.length) {
     if (text[i] !== '\x1b') { i++; continue; }
-    flushPlain();
+    flush(i);
     if (text[i + 1] === '[') {
       const m = text.indexOf('m', i + 2);
-      const end = text.indexOf('\x1b[0m', m + 1);
-      out.push({ text: text.slice(m + 1, end), sgr: text.slice(i + 2, m), url: null });
-      i = end + 4; // \x1b[0m is 4 chars
-      plainStart = i;
+      if (m === -1) { i++; continue; } // malformed SGR (no 'm'); treat as plain
+      const params = text.slice(i + 2, m).split(';');
+      for (let k = 0; k < params.length; k++) {
+        const p = params[k];
+        if (p === '38' || p === '48') {
+          const ext = p + ';' + (params[k + 1] ?? '') + ';' + (params[k + 2] ?? '');
+          k += 2;
+          if (p === '38') { for (let j = open.length - 1; j >= 0; j--) if (open[j].startsWith('38;')) open.splice(j, 1); }
+          else { for (let j = open.length - 1; j >= 0; j--) if (open[j].startsWith('48;')) open.splice(j, 1); }
+          open.push(ext);
+        } else applySgr(open, p);
+      }
+      i = m + 1;
+      runStart = m + 1;
     } else {
       const c1 = text.indexOf('\x1b\\', i);
       const c2 = text.indexOf('\x1b]8;;\x1b\\', c1 + 2);
@@ -652,10 +693,10 @@ function parseLineText(text: string): WTok[] {
       }
       out.push({ text: body, sgr, url: text.slice(i + 8, c1) });
       i = c2 + 7;
-      plainStart = i;
+      runStart = i;
     }
   }
-  flushPlain();
+  flush(text.length);
   return out;
 }
 export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] {
