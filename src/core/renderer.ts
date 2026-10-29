@@ -2,7 +2,8 @@
 
 import type { Token } from 'markdown-it';
 import { existsSync } from 'node:fs';
-import type { LinkSpan, RenderedLine, Theme } from './types.js';
+import type { LinkSpan, RenderedLine, Theme, ThemeColors } from './types.js';
+import { parseCallout } from './callouts.js';
 import { fenceLabelLang, highlightCode } from './highlight.js';
 
 export interface RenderCtx {
@@ -17,6 +18,17 @@ export interface RenderCtx {
 type LinkKind = 'file' | 'http' | 'wikilink' | 'embed';
 interface LinkInfo { href: string; kind: LinkKind; target?: string; resolved?: boolean; }
 interface Seg { text: string; sgr: string | null; br?: boolean; link?: LinkInfo | null; }
+
+// INV-2.4 — callout type → theme color key (unknown → NOTE styling).
+const CO_KEYS: Record<string, keyof ThemeColors> = {
+  NOTE: 'calloutNote',
+  TIP: 'calloutTip',
+  INFO: 'calloutInfo',
+  SUCCESS: 'calloutSuccess',
+  QUESTION: 'calloutQuestion',
+  WARNING: 'calloutWarning',
+  DANGER: 'calloutDanger',
+};
 
 function join(stack: string[]): string | null {
   return stack.length ? stack.join(';') : null;
@@ -205,6 +217,8 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
     case 'blockquote_open': {
       // INV-1.6 — '│ ' prefix (quote color) on every inner line; nested
       // blockquotes add their own prefix, so nesting yields '│ │ '
+      // INV-2.4 — first child paragraph starting `[!TYPE] Title` → callout:
+      // border in type color, bold `TYPE — Title`, body indented 2 spaces
       const inner: Seg[][] = [];
       let depth = 1;
       let j = i + 1;
@@ -213,8 +227,41 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
         else if (ts[j].type === 'blockquote_close') depth--;
         j++;
       }
-      walk(ts, i + 1, j - 1, rctx, inner, 0);
-      for (const l of inner) out.push([{ text: '│ ', sgr: rctx.theme.colors.quote || null }, ...l]);
+      const co =
+        ts[i + 1].type === 'paragraph_open'
+          ? parseCallout((ts[i + 2].content ?? '').split('\n')[0])
+          : null;
+      if (co !== null) {
+        // INV-2.4 — border in type color; first paragraph's first line is the
+        // marker (dropped); its remaining children become the first body line(s)
+        const key: keyof ThemeColors = CO_KEYS[co.type] ?? 'calloutNote';
+        const border = rctx.theme.colors[key] || null;
+        const boldBorder = border ? '1;' + border : '1';
+        const titleSegs: Seg[] = [
+          { text: '│ ', sgr: border },
+          { text: co.type, sgr: boldBorder },
+          { text: ' — ', sgr: null },
+          { text: co.title ?? '', sgr: emphSgr(rctx.theme, 'bold') },
+        ];
+        const kids = ts[i + 2].children ?? [];
+        const m = kids.findIndex((c) => c.type === 'softbreak' || c.type === 'hardbreak');
+        const firstBody: Seg[][] = m >= 0 ? splitAtBr(renderInline(rctx, kids.slice(m + 1), [])) : [];
+        const inner: Seg[][] = [];
+        walk(ts, i + 4, j - 1, rctx, inner, 0);
+        inner.unshift(...firstBody);
+        if (co.title !== null) inner.unshift(titleSegs);
+        else if (inner.length === 0) inner.push([]);
+        for (let k = 0; k < inner.length; k++) {
+          if (co.title === null || k > 0) {
+            inner[k] = [{ text: '│ ', sgr: border }, { text: '  ', sgr: null }, ...inner[k]];
+          }
+          out.push(inner[k]);
+        }
+      } else {
+        const inner: Seg[][] = [];
+        walk(ts, i + 1, j - 1, rctx, inner, 0);
+        for (const l of inner) out.push([{ text: '│ ', sgr: rctx.theme.colors.quote || null }, ...l]);
+      }
       return j;
     }
     case 'table_open': {
