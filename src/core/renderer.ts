@@ -1,7 +1,8 @@
-// 02 §8 — renderer conventions (task 1.4: lists implemented; remaining INTERIM: fence (1.5), table (1.6), blockquote prefix (1.7), links (1.7))
+// 02 §8 — renderer conventions (task 1.5: lists + fences implemented; remaining INTERIM: table (1.6), blockquote prefix (1.7), links (1.7))
 
 import type { Token } from 'markdown-it';
 import type { RenderedLine, Theme } from './types.js';
+import { fenceLabelLang, highlightCode } from './highlight.js';
 
 export interface RenderCtx {
   theme: Theme;
@@ -109,12 +110,20 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
     case 'hr':
       out.push([{ text: '─'.repeat(30), sgr: rctx.theme.colors.hr || null }]);
       return i + 1;
-    case 'fence':
-      // INTERIM (task 1.5 replaces with label + highlightCode)
-      for (const line of t.content.split('\n')) {
+    case 'fence': {
+      // 02 §8 / INV-1.3 — dim codeLabel line, then highlighted code as-is (no wrap)
+      const labelLang = fenceLabelLang(t.info);
+      const labelPrefix = '── ' + labelLang + ' ';
+      const label = labelPrefix + '─'.repeat(Math.max(0, rctx.width - labelPrefix.length));
+      out.push([{ text: label, sgr: rctx.theme.colors.codeLabel || null }]);
+      // fence token content carries a trailing newline (markdown-it) — not a code line
+      const code = t.content.endsWith('\n') ? t.content.slice(0, -1) : t.content;
+      const codeStr = highlightCode(code, labelLang === 'code' || labelLang === 'math' ? null : labelLang);
+      for (const line of codeStr.split('\n')) {
         out.push([{ text: line, sgr: null }]);
       }
       return i + 1;
+    }
     case 'blockquote_open': {
       // INTERIM (task 1.7 adds '│ ' prefix)
       let depth = 1;
