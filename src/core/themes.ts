@@ -121,12 +121,6 @@ export const DRACULA_THEME: Theme = {
   },
 };
 
-export const BUILTIN_THEMES: Record<string, Theme> = {
-  [DEFAULT_THEME.id]: DEFAULT_THEME,
-  [LIGHT_THEME.id]: LIGHT_THEME,
-  [DRACULA_THEME.id]: DRACULA_THEME,
-};
-
 const EMPTY_COLORS: ThemeColors = {
   heading1: '',
   heading2: '',
@@ -160,6 +154,18 @@ const EMPTY_COLORS: ThemeColors = {
   sidebar: '',
   statusOk: '',
   statusWarn: '',
+};
+
+export const PLAIN_THEME: Theme = {
+  id: 'plain',
+  name: 'plain',
+  colors: { ...EMPTY_COLORS },
+};
+
+export const BUILTIN_THEMES: Record<string, Theme> = {
+  [DEFAULT_THEME.id]: DEFAULT_THEME,
+  [LIGHT_THEME.id]: LIGHT_THEME,
+  [DRACULA_THEME.id]: DRACULA_THEME,
 };
 
 /** Wrap text in SGR sequences for the given theme key; empty color => plain text. */
@@ -237,26 +243,21 @@ export function allThemeIds(): string[] {
 }
 
 /**
- * Priority: env TRIMD_THEME > flags.theme > cfg.theme > 'default'.
- * Unknown id => ConfigError. NO_COLOR => { theme: {id:'nocolor', name:'nocolor', colors: all empty} }.
+ * 02 §4: NO_COLOR / TERM=dumb → PLAIN_THEME (ignores --theme), else --theme → cfg.theme → 'default'.
+ * Unknown id => ConfigError('unknown theme: <id>').
  */
 export function resolveTheme(
   env: NodeJS.ProcessEnv,
   flags: { theme?: string | null },
   cfg: Config,
 ): Theme {
-  const id = env.TRIMD_THEME || flags.theme || cfg.theme || 'default';
-  if (env.NO_COLOR !== undefined && env.NO_COLOR !== '') {
-    const nocolor: Theme = {
-      id: 'nocolor',
-      name: 'nocolor',
-      colors: { ...EMPTY_COLORS },
-    };
-    return nocolor;
+  if ((env.NO_COLOR !== undefined && env.NO_COLOR !== '') || env.TERM === 'dumb') {
+    return PLAIN_THEME;
   }
+  const id = flags.theme || cfg.theme || 'default';
   const builtin = BUILTIN_THEMES[id];
   if (builtin) return builtin;
   const user = loadUserTheme(id);
   if (user) return user;
-  throw new ConfigError('unknown theme: ' + id);
+  throw new ConfigError("unknown theme: " + id);
 }
