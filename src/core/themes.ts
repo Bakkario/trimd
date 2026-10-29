@@ -259,5 +259,5 @@ export function resolveTheme(
   if (builtin) return builtin;
   const user = loadUserTheme(id);
   if (user) return user;
-  throw new ConfigError("unknown theme: " + id);
+  throw new ConfigError("theme: unknown theme '" + id + "'");
 }

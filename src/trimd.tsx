@@ -2,7 +2,7 @@ import { render } from 'ink';
 import { dirname, resolve as resolvePath } from 'node:path';
 import App from './ui/App.js';
 import { renderFile } from './core/pipeline.js';
-import { resolveTheme } from './core/themes.js';
+import { resolveTheme, allThemeIds } from './core/themes.js';
 import { defaultConfigPath, loadConfig, mergeConfig, parseArgs } from './core/config.js';
 import { ConfigError, FileError, FileMissingError, UsageError } from './core/types.js';
 import type { Config, RenderedDoc, Theme } from './core/types.js';
@@ -70,8 +70,13 @@ const abs = resolvePath(process.cwd(), file);
 const root = flags.root !== undefined ? resolvePath(process.cwd(), flags.root) : dirname(abs);
 
 // 02 §4 — NO_COLOR/TERM=dumb → PLAIN_THEME before any theme lookup.
+// 02 §3 — unknown theme id (after allThemeIds()) → `trimd: theme: unknown theme '<id>'`, exit 3.
 let theme: Theme;
 try {
+  const themeId = flags.theme !== undefined ? flags.theme : merged.theme;
+  if (!allThemeIds().includes(themeId)) {
+    throw new ConfigError("theme: unknown theme '" + themeId + "'");
+  }
   theme = resolveTheme(process.env, flags, merged);
 } catch (err) {
   fail(err, !!flags.debug);
