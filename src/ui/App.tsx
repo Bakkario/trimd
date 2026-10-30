@@ -168,6 +168,18 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
       return;
     }
 
+    // ADR-017 (amended, ISSUE-002) — ←/→ switch focus between panes without
+    // toggling; no-op when the target pane is closed (sidebar focus is only
+    // reachable while the sidebar is open).
+    if (key.leftArrow) {
+      if (state.focus === 'sidebar') setState((st) => ({ ...st, focus: 'doc' }));
+      return;
+    }
+    if (key.rightArrow) {
+      if (state.sidebarOpen && state.focus === 'doc') setState((st) => ({ ...st, focus: 'sidebar' }));
+      return;
+    }
+
     if (state.focus === 'sidebar') {
       // INV-3.4 — ↑/↓ move the sidebar cursor; Enter opens the entry.
       const n = entries.length;

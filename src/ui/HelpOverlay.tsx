@@ -4,6 +4,7 @@ import { Box, Text } from 'ink';
 const ROWS: Array<[string, string]> = [
   ['q', 'quit'],
   ['Tab', 'toggle sidebar + focus'],
+  ['← →', 'focus doc ↔ sidebar (no-op when target pane closed)'],
   ['↑ ↓ PgUp PgDn g G', 'scroll doc (sidebar cursor when sidebar focused)'],
   ['Enter', 'open sidebar entry'],
   ['Esc', 'back / leave sidebar focus'],

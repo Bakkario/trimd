@@ -45,6 +45,7 @@ Exit codes: `0` quit/help · `1` file missing · `2` file unreadable / root walk
 | `q` | Quit (exit 0) |
 | `?` | Help overlay (any key closes it) |
 | `Tab` | Toggle the sidebar (focuses it when opened) |
+| `←` / `→` | Switch focus between doc and sidebar (no-op when the target pane is closed) |
 | `↑` / `↓` | Scroll the document, or move the sidebar cursor when the sidebar is focused |
 | `PgUp` / `PgDn` | Scroll one pane |
 | `g` / `G` | Jump to top / bottom of the document |
