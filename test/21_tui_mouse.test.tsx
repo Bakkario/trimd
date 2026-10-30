@@ -115,9 +115,10 @@ test('left-button release on a doc link navigates (02 §10 wiring, INV-3.6)', as
 
     try {
       await new Promise((r) => setTimeout(r, 200));
-      // SGR 1006: 1-based (31,1) → 0-based (30,0) → doc (0,0) with the 30-col
-      // sidebar open → the "alpha" link span on line 0 → navOpen(b.md).
-      process.stdin.emit('data', '\x1b[<64;31;1m');
+      // Konsole SGR 1006 left release (code 0): 1-based (31,1) → 0-based (30,0)
+      // → doc (0,0) with the 30-col sidebar open → the "alpha" link span on
+      // line 0 → navOpen(b.md). (ADR-012 am. ISSUE-001)
+      process.stdin.emit('data', '\x1b[<0;31;1m');
       await new Promise((r) => setTimeout(r, 300));
       inst.unmount();
       unmounted = true;
@@ -125,6 +126,40 @@ test('left-button release on a doc link navigates (02 §10 wiring, INV-3.6)', as
       const frame = stripAnsi((out as unknown as { chunks: string[] }).chunks.join(''));
       assert.ok(frame.includes('Bravo'), 'frame shows the clicked doc (b.md)');
       assert.ok(frame.includes('b.md'), 'breadcrumb updated to b.md');
+    } finally {
+      if (!unmounted) inst.unmount();
+      releaseStdinFixture();
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('wheel reports (code 64/65) at a link are ignored — no navigation (ADR-012 am. ISSUE-001)', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'trimd-21c-'));
+  let unmounted = false;
+  try {
+    writeFileSync(join(tmp, 'a.md'), '[alpha](b.md)\n');
+    writeFileSync(join(tmp, 'b.md'), '# Bravo\n');
+    const doc = renderFile(join(tmp, 'a.md'), { root: tmp, width: 48, theme: DEFAULT_THEME, showFrontmatter: true, showHidden: false });
+
+    const out = captureStdout();
+    const inst = render(
+      <App doc={doc} root={tmp} theme={DEFAULT_THEME} themeId="default" sidebarOpen={true} showHidden={false} showFrontmatter={true} />,
+      { stdout: out, stdin: fakeTty() },
+    );
+
+    try {
+      await new Promise((r) => setTimeout(r, 200));
+      // Wheel up/down press+release exactly over the link span: 64/65 are
+      // wheel codes, not left-button — nothing may happen.
+      process.stdin.emit('data', '\x1b[<64;31;1M\x1b[<64;31;1m\x1b[<65;31;1M\x1b[<65;31;1m');
+      await new Promise((r) => setTimeout(r, 300));
+      inst.unmount();
+      unmounted = true;
+      await waitExit(inst);
+      const frame = stripAnsi((out as unknown as { chunks: string[] }).chunks.join(''));
+      assert.ok(!frame.includes('Bravo'), 'wheel events must not navigate');
     } finally {
       if (!unmounted) inst.unmount();
       releaseStdinFixture();
