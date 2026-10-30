@@ -9,8 +9,10 @@ import App from '../src/ui/App.js';
 import { renderFile } from '../src/core/pipeline.js';
 import { DEFAULT_THEME } from '../src/core/themes.js';
 
-// ISSUE-002 (ADR-017 amended) — ←/→ switch focus between doc and sidebar
-// without toggling the sidebar; no-op when the target pane is closed.
+// ISSUE-002 + ISSUE-008 (ADR-017 amended) — ←/→ switch focus between doc
+// and sidebar without toggling the sidebar, spatially (the arrow points at
+// the pane it focuses: ← → sidebar, → → doc); no-op when the target pane
+// is closed.
 // Focus is not rendered directly, so each test observes it behaviorally:
 // ↓ scrolls the doc (status bar `L<n> <n>/30`) when the doc is focused, or
 // moves the sidebar cursor (reverse-video entry row) when the sidebar is.
@@ -90,13 +92,13 @@ async function finish(h: { inst: ReturnType<typeof render>; out: Writable }): Pr
   return { raw, frame: stripAnsi(raw) };
 }
 
-test('→ moves focus doc→sidebar: ↓ afterwards moves the sidebar cursor, not the doc (ADR-017 am. ISSUE-002)', async () => {
+test('← moves focus doc→sidebar: ↓ afterwards moves the sidebar cursor, not the doc (ADR-017 am. ISSUE-002/008)', async () => {
   const h = setup(true);
   try {
     await wait(200);
     h.stdin.push('\x1b[B'); // doc focused: ↓ scrolls the doc (L1 → L2)
     await wait(300);
-    h.stdin.push('\x1b[C'); // → : focus the sidebar
+    h.stdin.push('\x1b[D'); // ← : focus the sidebar (spatial — sidebar is on the left)
     await wait(300);
     h.stdin.push('\x1b[B'); // ↓ : sidebar cursor 0 → 1 (b.md)
     await wait(300);
@@ -110,15 +112,15 @@ test('→ moves focus doc→sidebar: ↓ afterwards moves the sidebar cursor, no
   }
 });
 
-test('← moves focus sidebar→doc: ↓ afterwards scrolls the doc again (ADR-017 am. ISSUE-002)', async () => {
+test('→ moves focus sidebar→doc: ↓ afterwards scrolls the doc again (ADR-017 am. ISSUE-002/008)', async () => {
   const h = setup(true);
   try {
     await wait(200);
-    h.stdin.push('\x1b[C'); // → : focus the sidebar
+    h.stdin.push('\x1b[D'); // ← : focus the sidebar (spatial — sidebar is on the left)
     await wait(300);
     h.stdin.push('\x1b[B'); // ↓ : sidebar cursor 0 → 1 (doc does not scroll)
     await wait(300);
-    h.stdin.push('\x1b[D'); // ← : focus the doc
+    h.stdin.push('\x1b[C'); // → : focus the doc
     await wait(300);
     h.stdin.push('\x1b[B'); // ↓ : doc scrolls (L1 → L2)
     await wait(300);
@@ -132,11 +134,11 @@ test('← moves focus sidebar→doc: ↓ afterwards scrolls the doc again (ADR-0
   }
 });
 
-test('→ is a no-op when the sidebar is closed: ↓ still scrolls the doc (ADR-017 am. ISSUE-002)', async () => {
+test('← is a no-op when the sidebar is closed: ↓ still scrolls the doc (ADR-017 am. ISSUE-002/008)', async () => {
   const h = setup(false);
   try {
     await wait(200);
-    h.stdin.push('\x1b[C'); // → : no-op (sidebar closed)
+    h.stdin.push('\x1b[D'); // ← : no-op (sidebar closed)
     await wait(300);
     h.stdin.push('\x1b[B'); // ↓ : doc scrolls (focus stayed on the doc)
     await wait(300);
@@ -147,11 +149,11 @@ test('→ is a no-op when the sidebar is closed: ↓ still scrolls the doc (ADR-
   }
 });
 
-test('← is a no-op when the doc is already focused: ↓ scrolls the doc (ADR-017 am. ISSUE-002)', async () => {
+test('→ is a no-op when the doc is already focused: ↓ scrolls the doc (ADR-017 am. ISSUE-002/008)', async () => {
   const h = setup(true);
   try {
     await wait(200);
-    h.stdin.push('\x1b[D'); // ← : no-op (focus already on the doc)
+    h.stdin.push('\x1b[C'); // → : no-op (focus already on the doc)
     await wait(300);
     h.stdin.push('\x1b[B'); // ↓ : doc scrolls
     await wait(300);
