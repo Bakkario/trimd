@@ -255,10 +255,19 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
   // ADR-023 (ISSUE-010) — pane headers: sidebar header = the sidebar cwd
   // (basename(root) at root, else root-relative), truncated to 28 chars; doc
   // header = `¶ <root-relative doc path>` (same string as the status bar),
-  // truncated to the doc width. Both dim in this issue — ISSUE-011 adds the
-  // focus styling to these headers.
+  // truncated to the doc width.
   const sidebarHeader = fitLabel(state.cwd === root ? basename(root) : relative(root, state.cwd), 28);
   const docHeader = fitLabel('¶ ' + path, width);
+
+  // R-2 (ISSUE-011) — focus indicator on the pane headers: the focused
+  // pane's header is bright (no dim SGR), the inactive pane's header is dim.
+  // The separator column stays dim in all states.
+  const sidebarHeaderText = state.focus === 'sidebar'
+    ? sidebarHeader
+    : paint(themeObj, 'dim', sidebarHeader);
+  const docHeaderText = state.focus === 'doc'
+    ? docHeader
+    : paint(themeObj, 'dim', docHeader);
 
   return (
     <Box flexDirection="column" width="100%" height={terminalRows}>
@@ -270,15 +279,15 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
               {state.sidebarOpen ? (
                 <>
                   <Box width={30}>
-                    <Text>{paint(themeObj, 'dim', sidebarHeader)}</Text>
+                    <Text>{sidebarHeaderText}</Text>
                   </Box>
                   <Text>{paint(themeObj, 'dim', '│')}</Text>
                   <Box flexGrow={1}>
-                    <Text>{paint(themeObj, 'dim', docHeader)}</Text>
+                    <Text>{docHeaderText}</Text>
                   </Box>
                 </>
               ) : (
-                <Text>{paint(themeObj, 'dim', docHeader)}</Text>
+                <Text>{docHeaderText}</Text>
               )}
             </Box>
             <Box flexDirection="row" height={contentRows}>
