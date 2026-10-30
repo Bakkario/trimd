@@ -33,19 +33,27 @@ function fitLabel(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
-// 02 §11 — StatusBar (inlined here until the layout grows; props per contract).
-function StatusBar({ theme, path, line, total, themeId, warnings }: {
+// 02 §11 — StatusBar (inlined here until the layout grows; props per
+// contract). R-3 (ISSUE-012): between the center and the right group, a dim
+// contextual key hint for the focused pane; omitted while warnings are
+// present (they take precedence for the space).
+function StatusBar({ theme, path, line, total, themeId, warnings, focus }: {
   theme: Theme;
   path: string;
   line: number;
   total: number;
   themeId: string;
   warnings: string[];
+  focus: Focus;
 }) {
+  const hint = warnings.length === 0
+    ? (focus === 'doc' ? '↑↓ scroll · g/G · ?' : '↑↓ move · ⏎ open · ?')
+    : null;
   return (
     <Box flexDirection="row" justifyContent="space-between" width="100%">
       <Text>{path}</Text>
       <Text>L{line} {line}/{total}</Text>
+      {hint !== null && <Text>{paint(theme, 'dim', hint)}</Text>}
       <Box flexDirection="row">
         <Text>{themeId}</Text>
         {warnings.length > 0
@@ -303,7 +311,7 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
             </Box>
           </>
         )}
-      <StatusBar theme={themeObj} path={path} line={line} total={total} themeId={state.themeId} warnings={docMemo.warnings} />
+      <StatusBar theme={themeObj} path={path} line={line} total={total} themeId={state.themeId} warnings={docMemo.warnings} focus={state.focus} />
     </Box>
   );
 }
