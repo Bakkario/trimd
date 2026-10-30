@@ -4,6 +4,8 @@ import type { DirEntry } from '../core/resolve.js';
 // 02 §11 — Sidebar: pure display of one directory level.
 // Dirs carry a ▸ prefix; cursor line is reverse video (\x1b[7m);
 // names truncated with … beyond 28 chars (ADR-013); 30-col width.
+// R-4 (ISSUE-013): an empty directory shows a dim `(no notes)` row
+// (hardcoded SGR, same pattern as the cursor row).
 export interface SidebarProps {
   entries: DirEntry[];
   cursor: number;
@@ -15,6 +17,13 @@ function truncate(name: string): string {
 }
 
 export default function Sidebar({ entries, cursor, width }: SidebarProps) {
+  if (entries.length === 0) {
+    return (
+      <Box flexDirection="column" width={width}>
+        <Text>{'\x1b[2m(no notes)\x1b[0m'}</Text>
+      </Box>
+    );
+  }
   return (
     <Box flexDirection="column" width={width}>
       {entries.map((e, i) => {

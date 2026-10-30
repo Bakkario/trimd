@@ -307,7 +307,15 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
                   ))}
                 </Box>
               )}
-              <DocPane doc={docMemo} scrollTop={scrollTop} rows={contentRows} width={width} />
+              {docMemo.lines.length === 0 ? (
+                // R-4 (ISSUE-013) — an empty doc renders one dim row in
+                // place of the (theme-free) DocPane.
+                <Box flexDirection="column" width={width}>
+                  <Text>{paint(themeObj, 'dim', '(empty document)')}</Text>
+                </Box>
+              ) : (
+                <DocPane doc={docMemo} scrollTop={scrollTop} rows={contentRows} width={width} />
+              )}
             </Box>
           </>
         )}
