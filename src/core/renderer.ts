@@ -69,24 +69,79 @@ function segsVisible(segs: Seg[]): number {
   return segs.reduce((a, s) => a + visibleWidth(s.text), 0);
 }
 
-// 02 §8 — cap cell content to `cap` visible chars; overflow → `…` (in the cut seg's style).
-function truncateStyled(segs: Seg[], cap: number): Seg[] {
-  const out: Seg[] = [];
-  let used = 0;
+// 02 §8 — wrap styled segs to visible width `w` (greedy word wrap; over-long
+// words hard-broken; `br` segs force a new line). Style (SGR + link info)
+// stays attached to its characters: a link split across lines keeps its
+// LinkInfo on every fragment, so segsToString emits a full OSC 8 pair per
+// fragment and lineSpans builds a span per fragment.
+function wrapCellSegs(segs: Seg[], width: number): Seg[][] {
+  const w = Math.max(1, width);
+  type C = { ch: string; seg: Seg };
+  // toks: { word: C[] } or { word: null } (forced line break)
+  const toks: { word: C[] | null }[] = [];
+  let cur: C[] = [];
+  const flush = (): void => {
+    if (cur.length > 0) toks.push({ word: cur });
+    cur = [];
+  };
   for (const s of segs) {
-    if (used >= cap) break;
-    if (s.text.length === 0) continue;
-    if (used + s.text.length <= cap) {
-      out.push(s);
-      used += s.text.length;
-    } else {
-      const keep = cap - used - 1;
-      if (keep > 0) out.push({ text: s.text.slice(0, keep), sgr: s.sgr });
-      out.push({ text: '…', sgr: s.sgr });
-      break;
+    if (s.br) {
+      flush();
+      toks.push({ word: null });
+      continue;
+    }
+    for (const ch of s.text) {
+      if (ch === ' ') flush();
+      else cur.push({ ch, seg: s });
     }
   }
-  return out;
+  flush();
+  const lines: Seg[][] = [];
+  let line: Seg[] = [];
+  let used = 0;
+  const newline = (): void => {
+    if (line.length === 0 && lines.length > 0) return;
+    lines.push(line);
+    line = [];
+    used = 0;
+  };
+  const appendChar = (ch: string, seg: Seg): void => {
+    const last = line[line.length - 1];
+    if (last && !last.br && last.sgr === seg.sgr && !!last.link === !!seg.link) last.text += ch;
+    else line.push({ text: ch, sgr: seg.sgr, link: seg.link ?? null });
+  };
+  const appendWord = (cs: C[]): void => {
+    for (const c of cs) appendChar(c.ch, c.seg);
+    used += cs.length;
+  };
+  const hardBreak = (cs: C[]): void => {
+    let rest = cs;
+    while (rest.length > 0) {
+      if (used > 0) newline();
+      appendWord(rest.slice(0, w));
+      rest = rest.slice(w);
+    }
+  };
+  for (const tok of toks) {
+    if (tok.word === null) {
+      newline();
+      continue;
+    }
+    const cs = tok.word;
+    if (used === 0 ? cs.length <= w : used + 1 + cs.length <= w) {
+      if (used > 0) {
+        line.push({ text: ' ', sgr: null });
+        used += 1;
+      }
+      appendWord(cs);
+    } else {
+      if (line.length > 0) newline();
+      if (cs.length <= w) appendWord(cs);
+      else hardBreak(cs);
+    }
+  }
+  if (line.length > 0) newline();
+  return lines;
 }
 
 // 02 §7 / INV-1.7 — classify a markdown link href.
@@ -300,8 +355,8 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
     }
     case 'table_open': {
       // 02 §8 / INV-1.5 — bold tableHead header, tableBorder ─ separator,
-      // aligned columns (cap 40, overflow → …), 1-space padding, no pipes
-      const CAP = 40;
+      // columns sized to the pane (shrink widest until Σw + gaps ≤ width,
+      // floor 4), cells wrap within their column, 1-space padding, no pipes
       const headSgr = rctx.theme.colors.tableHead ? '1;' + rctx.theme.colors.tableHead : '1';
       const rows: { header: boolean; cells: Seg[][] }[] = [];
       let j = i + 1;
@@ -332,19 +387,41 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       const widths: number[] = new Array(cols).fill(0);
       for (const r of rows) {
         for (let c = 0; c < r.cells.length; c++) {
-          widths[c] = Math.min(CAP, Math.max(widths[c], segsVisible(r.cells[c])));
+          widths[c] = Math.max(widths[c], segsVisible(r.cells[c]));
         }
       }
-      for (const r of rows) {
-        const line: Seg[] = [];
+      // Fit the table to the pane: shrink the widest columns (floor 4)
+      // until Σ widths + (cols − 1) inter-column gaps ≤ rctx.width.
+      const MIN_W = 4;
+      let total = widths.reduce((a, w) => a + w, 0) + Math.max(0, cols - 1);
+      while (total > rctx.width) {
+        let mi = -1;
         for (let c = 0; c < cols; c++) {
-          if (c > 0) line.push({ text: ' ', sgr: null });
-          const segs = truncateStyled(r.cells[c] ?? [], CAP);
-          const vis = segsVisible(segs);
-          line.push(...segs);
-          if (c < cols - 1) line.push({ text: ' '.repeat(widths[c] - vis), sgr: null });
+          if (widths[c] > MIN_W && (mi === -1 || widths[c] > widths[mi])) mi = c;
         }
-        out.push(line);
+        if (mi === -1) break;
+        widths[mi]--;
+        total--;
+      }
+      const wrapped = rows.map((r) =>
+        r.cells.map((cell, c) => wrapCellSegs(cell, c < cols ? widths[c] : 0)),
+      );
+      for (let ri = 0; ri < rows.length; ri++) {
+        const r = rows[ri];
+        const h = Math.max(1, ...wrapped[ri].map((cl) => cl.length));
+        for (let k = 0; k < h; k++) {
+          const line: Seg[] = [];
+          for (let c = 0; c < cols; c++) {
+            if (c > 0) line.push({ text: ' ', sgr: null });
+            const cellSegs = wrapped[ri][c] ? (wrapped[ri][c][k] ?? []) : [];
+            line.push(...cellSegs);
+            if (c < cols - 1) {
+              const pad = widths[c] - segsVisible(cellSegs);
+              if (pad > 0) line.push({ text: ' '.repeat(pad), sgr: null });
+            }
+          }
+          out.push(line);
+        }
         if (r.header) {
           out.push([{ text: widths.map((w) => '─'.repeat(w)).join(' '), sgr: rctx.theme.colors.tableBorder || null }]);
         }
@@ -701,8 +778,14 @@ function parseLineText(text: string): WTok[] {
 }
 export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] {
   const out: RenderedLine[] = [];
-  for (let li = 0; li < lines.length; li++) {
-    const line = lines[li];
+  for (const line of lines) {
+    // 02 §8 — a line that fits passes through unchanged (text and spans,
+    // leading/trailing whitespace included) — e.g. table continuation lines
+    // and indented fence lines.
+    if (visibleWidth(line.text) <= width) {
+      out.push(line);
+      continue;
+    }
     const toks = parseLineText(line.text);
     const spanAt = (col: number): LinkSpan | undefined =>
       line.links.find((s) => s.startCol <= col && col < s.endCol);

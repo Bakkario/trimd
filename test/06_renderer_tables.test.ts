@@ -35,14 +35,25 @@ test('columns align: col 2 starts at the same visible column in every row', () =
   }
 });
 
-test('cell wider than 40 chars is truncated with … (width capped at 40)', () => {
+test('wide table fits the pane: column width = max visible width (no cap, no truncation)', () => {
   const long = 'a'.repeat(45);
   const ls = render('| ' + long + ' | b |\n| --- | --- |\n| c | d |');
   assert.equal(ls.length, 3);
-  assert.equal(strip(ls[0].text), 'a'.repeat(39) + '… b');
-  assert.ok(ls[0].text.startsWith(HEAD), 'truncated header cell stays bold');
-  assert.equal(strip(ls[1].text), '─'.repeat(40) + ' ' + '─');
-  assert.equal(strip(ls[2].text), 'c' + ' '.repeat(40) + 'd');
+  assert.equal(strip(ls[0].text), 'a'.repeat(45) + ' b');
+  assert.ok(ls[0].text.startsWith(HEAD), 'header cell stays bold');
+  assert.equal(strip(ls[1].text), '─'.repeat(45) + ' ' + '─');
+  assert.equal(strip(ls[2].text), 'c' + ' '.repeat(44) + ' d');
+});
+
+test('table wider than the pane: widths shrink (widest first, ties leftmost), cells wrap', () => {
+  // natural 50+50+1 = 101 > 80 → shrink to 39+40+1 = 80
+  const a50 = 'a'.repeat(50);
+  const ls = render('| ' + a50 + ' | ' + a50 + ' |\n| --- | --- |\n| x | y |');
+  assert.equal(ls.length, 4);
+  assert.equal(strip(ls[0].text), 'a'.repeat(39) + ' ' + 'a'.repeat(40), 'header line 1');
+  assert.equal(strip(ls[1].text), 'a'.repeat(11) + ' '.repeat(29) + 'a'.repeat(10), 'header line 2');
+  assert.equal(strip(ls[2].text), '─'.repeat(39) + ' ' + '─'.repeat(40), 'separator');
+  assert.equal(strip(ls[3].text), 'x' + ' '.repeat(38) + ' y', 'body row');
 });
 
 test('INV-1.2: no | pipes anywhere in table output', () => {
