@@ -94,7 +94,7 @@ Reset: `rm -rf ~/.config/trimd`.
 
 ## Mouse
 
-Clicking works via the SGR (1006) mouse protocol: click a link in the document to navigate (http(s) links open in the browser), click a sidebar entry to open it. This requires a terminal with mouse reporting — GNOME Terminal, Konsole, kitty, Alacritty, WezTerm, foot: yes. Inside tmux: add `set -g mouse on` to `.tmux.conf`. Inside screen: not supported (the keyboard remains fully functional).
+Clicking works via the SGR (1006) mouse protocol: click a link in the document to navigate (http(s) links open in the browser), click a sidebar entry to open it. A click also moves keyboard focus to the pane you clicked (doc ↔ sidebar). This requires a terminal with mouse reporting — GNOME Terminal, Konsole, kitty, Alacritty, WezTerm, foot: yes. Inside tmux: add `set -g mouse on` to `.tmux.conf`. Inside screen: not supported (the keyboard remains fully functional).
 
 ## Limitations (v1.0)
 

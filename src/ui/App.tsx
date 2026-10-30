@@ -109,13 +109,17 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
       if (e.action !== 'release' || e.button !== 0) return;
       const { state: st, doc, scrollTop: top, render: renderNow } = view.current;
       if (st.sidebarOpen && e.x < 30) {
-        // INV-3.6 — mouseup in the sidebar region = open that entry.
+        // INV-3.6 (am. ISSUE-003) — mouseup in the sidebar region focuses
+        // the sidebar; if the row carries an entry, it is opened.
         const entry = hitTestSidebar(st.cwd, showHidden, e.y);
-        if (!entry) return;
+        if (!entry) {
+          if (st.focus !== 'sidebar') setState((s) => ({ ...s, focus: 'sidebar' }));
+          return;
+        }
         if (entry.isDir) {
           setState((s) => ({ ...s, cwd: entry.abs, cursor: 0, focus: 'sidebar' }));
         } else {
-          setState((s) => ({ ...navOpen(s, entry.abs, renderNow), focus: 'doc' }));
+          setState((s) => ({ ...navOpen(s, entry.abs, renderNow), focus: 'sidebar' }));
         }
         return;
       }
@@ -123,9 +127,15 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
       // LinkSpan columns are pane-relative.
       const docX = e.x - (st.sidebarOpen ? 30 : 0);
       const span = hitTestDoc(doc, top, docX, e.y);
-      if (!span) return; // unresolved links register no span → no-op
+      if (!span) {
+        // INV-3.6 (am. ISSUE-003) — doc-region click outside a link
+        // (incl. unresolved spans, which register no span) focuses the doc.
+        if (st.focus !== 'doc') setState((s) => ({ ...s, focus: 'doc' }));
+        return;
+      }
       if (span.kind === 'http') {
         openExternal(span.href);
+        if (st.focus !== 'doc') setState((s) => ({ ...s, focus: 'doc' }));
         return;
       }
       setState((s) => ({ ...navOpen(s, span.href, renderNow), focus: 'doc' }));
