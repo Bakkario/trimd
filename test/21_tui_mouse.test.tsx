@@ -115,10 +115,11 @@ test('left-button release on a doc link navigates (02 §10 wiring, INV-3.6)', as
 
     try {
       await new Promise((r) => setTimeout(r, 200));
-      // Konsole SGR 1006 left release (code 0): 1-based (31,1) → 0-based (30,0)
-      // → doc (0,0) with the 30-col sidebar open → the "alpha" link span on
-      // line 0 → navOpen(b.md). (ADR-012 am. ISSUE-001)
-      process.stdin.emit('data', '\x1b[<0;31;1m');
+      // Konsole SGR 1006 left release (code 0): 1-based (32,2) → 0-based
+      // (31,1) → below the header row: doc line 0, col 0 with the 30-col
+      // sidebar + separator column open → the "alpha" link span on line 0 →
+      // navOpen(b.md). (ADR-012 am. ISSUE-001; ADR-023 am. ISSUE-010)
+      process.stdin.emit('data', '\x1b[<0;32;2m');
       await new Promise((r) => setTimeout(r, 300));
       inst.unmount();
       unmounted = true;
@@ -151,9 +152,10 @@ test('wheel reports (code 64/65) at a link are ignored — no navigation (ADR-01
 
     try {
       await new Promise((r) => setTimeout(r, 200));
-      // Wheel up/down press+release exactly over the link span: 64/65 are
-      // wheel codes, not left-button — nothing may happen.
-      process.stdin.emit('data', '\x1b[<64;31;1M\x1b[<64;31;1m\x1b[<65;31;1M\x1b[<65;31;1m');
+      // Wheel up/down press+release exactly over the link span (coords
+      // shifted per ADR-023 — the shift is irrelevant here: 64/65 are wheel
+      // codes, not left-button, so nothing may happen).
+      process.stdin.emit('data', '\x1b[<64;32;2M\x1b[<64;32;2m\x1b[<65;32;2M\x1b[<65;32;2m');
       await new Promise((r) => setTimeout(r, 300));
       inst.unmount();
       unmounted = true;

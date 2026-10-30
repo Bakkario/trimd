@@ -98,9 +98,10 @@ async function finish(h: { inst: ReturnType<typeof render>; out: Writable }): Pr
 }
 
 // Konsole left-button release bytes (code 0), 1-based coords (ADR-012 am.
-// ISSUE-001): \x1b[<0;<x+1>;<y+1>m
-const clickDoc = () => process.stdin.emit('data', '\x1b[<0;36;6m');    // 0-based (35,5): doc row 5, no span
-const clickSidebarRow = (row: number) => process.stdin.emit('data', `\x1b[<0;11;${row + 1}m`); // 0-based (10,row)
+// ISSUE-001; ADR-023 am. ISSUE-010 — content starts below the header row,
+// and the doc pane starts at column 31 with the separator column open):
+const clickDoc = () => process.stdin.emit('data', '\x1b[<0;67;7m');    // 0-based (66,6): doc row 5, doc col 35, no span
+const clickSidebarRow = (row: number) => process.stdin.emit('data', `\x1b[<0;11;${row + 2}m`); // 0-based (10,row+1): entry below the header
 
 test('doc click outside a link moves focus to the doc (INV-3.6 am. ISSUE-003)', async () => {
   const h = setup();

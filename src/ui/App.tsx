@@ -1,6 +1,6 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { relative } from 'node:path';
+import { basename, relative } from 'node:path';
 import type { MouseEvt, RenderedDoc, Theme } from '../core/types.js';
 import { paint, allThemeIds, BUILTIN_THEMES, loadUserTheme } from '../core/themes.js';
 import { renderFile } from '../core/pipeline.js';
@@ -25,6 +25,12 @@ export interface AppProps {
   sidebarOpen: boolean;
   showHidden: boolean;
   showFrontmatter: boolean;
+}
+
+// ADR-023 (ISSUE-010) — pane-header labels must never wrap: truncate
+// manually (Sidebar's `truncate()` pattern), not with ink `wrap="truncate"`.
+function fitLabel(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
 // 02 §11 — StatusBar (inlined here until the layout grows; props per contract).
@@ -64,11 +70,14 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
   }));
   const cur = state.stack[state.cur];
 
-  // 02 §11 — pane rows = terminal rows − 1; effective width = terminalCols
-  // − (sidebarOpen ? 30 : 0) − 2, min 40.
+  // 02 §11 / ADR-023 — chrome layout: header row (row 0) + content rows +
+  // status row. Content rows = terminalRows − 2 (was terminalRows − 1).
+  // Effective doc width = terminalCols − (sidebarOpen ? 31 : 0) (sidebar 30
+  // + separator 1), min 40.
   const stdout = useStdout().stdout as NodeJS.WritableStream & { rows?: number; columns?: number };
-  const paneRows = Math.max(1, (stdout.rows || 24) - 1);
-  const width = Math.max((stdout.columns || 80) - (state.sidebarOpen ? 30 : 0) - 2, 40);
+  const terminalRows = stdout.rows || 24;
+  const contentRows = Math.max(1, terminalRows - 2);
+  const width = Math.max((stdout.columns || 80) - (state.sidebarOpen ? 31 : 0), 40);
 
   // 02 §11 / INV-3.8 — the theme object follows state.themeId (T cycles it
   // via nextTheme over allThemeIds()). The initial prop's theme is kept
@@ -93,25 +102,32 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
   );
 
   const total = docMemo.lines.length;
-  const maxTop = Math.max(0, total - paneRows);
+  const maxTop = Math.max(0, total - contentRows);
   const scrollTop = Math.min(cur.scrollTop, maxTop);
 
   // 02 §10 / INV-3.6 — mouse: enable SGR 1006 on mount, parse stdin, act on
   // left-button release. The parser callback reads the latest view through a
   // ref, so the listener (and the enable/disable mode bytes) attach exactly
   // once per mount instead of per state change.
-  const view = useRef({ state, doc: docMemo, scrollTop, render });
-  view.current = { state, doc: docMemo, scrollTop, render };
+  const view = useRef({ state, doc: docMemo, scrollTop, render, contentRows });
+  view.current = { state, doc: docMemo, scrollTop, render, contentRows };
 
   useEffect(() => {
     process.stdout.write(MOUSE_ENABLE);
     const p = createMouseParser((e: MouseEvt) => {
       if (e.action !== 'release' || e.button !== 0) return;
-      const { state: st, doc, scrollTop: top, render: renderNow } = view.current;
+      const { state: st, doc, scrollTop: top, render: renderNow, contentRows: crows } = view.current;
+      // ADR-023 (ISSUE-010) — the status row (and anything below it) is not
+      // clickable.
+      if (e.y >= crows) return;
+      // ADR-023 — content starts below the header row; a click on the header
+      // row itself is a no-op.
+      const rowY = e.y - 1;
+      if (rowY < 0) return;
       if (st.sidebarOpen && e.x < 30) {
         // INV-3.6 (am. ISSUE-003) — mouseup in the sidebar region focuses
         // the sidebar; if the row carries an entry, it is opened.
-        const entry = hitTestSidebar(st.cwd, showHidden, e.y);
+        const entry = hitTestSidebar(st.cwd, showHidden, rowY);
         if (!entry) {
           if (st.focus !== 'sidebar') setState((s) => ({ ...s, focus: 'sidebar' }));
           return;
@@ -123,10 +139,13 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
         }
         return;
       }
-      // Doc pane starts at terminal column 30 when the sidebar is open;
-      // LinkSpan columns are pane-relative.
-      const docX = e.x - (st.sidebarOpen ? 30 : 0);
-      const span = hitTestDoc(doc, top, docX, e.y);
+      // ADR-023 (ISSUE-010) — the separator column (x === 30, sidebar open)
+      // is a no-op.
+      if (st.sidebarOpen && e.x === 30) return;
+      // Doc pane starts at terminal column 31 when the sidebar is open
+      // (30-col sidebar + 1-col separator); LinkSpan columns are pane-relative.
+      const docX = e.x - (st.sidebarOpen ? 31 : 0);
+      const span = hitTestDoc(doc, top, docX, rowY);
       if (!span) {
         // INV-3.6 (am. ISSUE-003) — doc-region click outside a link
         // (incl. unresolved spans, which register no span) focuses the doc.
@@ -210,12 +229,13 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
       return;
     }
 
-    // doc focus — INV-3.3: ↑/↓ scroll 1, PgUp/PgDn scroll paneRows, g/G top/bottom, clamped.
+    // doc focus — INV-3.3: ↑/↓ scroll 1, PgUp/PgDn scroll content rows
+    // (ADR-023), g/G top/bottom, clamped.
     let next: number | null = null;
     if (key.upArrow) next = cur.scrollTop - 1;
     else if (key.downArrow) next = cur.scrollTop + 1;
-    else if (key.pageUp) next = cur.scrollTop - paneRows;
-    else if (key.pageDown) next = cur.scrollTop + paneRows;
+    else if (key.pageUp) next = cur.scrollTop - contentRows;
+    else if (key.pageDown) next = cur.scrollTop + contentRows;
     else if (input === 'g') next = 0;
     else if (input === 'G') next = maxTop;
     if (next === null) return;
@@ -232,15 +252,47 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
   const path = relative(root, cur.abs);
   const line = scrollTop + 1;
 
+  // ADR-023 (ISSUE-010) — pane headers: sidebar header = the sidebar cwd
+  // (basename(root) at root, else root-relative), truncated to 28 chars; doc
+  // header = `¶ <root-relative doc path>` (same string as the status bar),
+  // truncated to the doc width. Both dim in this issue — ISSUE-011 adds the
+  // focus styling to these headers.
+  const sidebarHeader = fitLabel(state.cwd === root ? basename(root) : relative(root, state.cwd), 28);
+  const docHeader = fitLabel('¶ ' + path, width);
+
   return (
-    <Box flexDirection="column" width="100%" height={paneRows + 1}>
+    <Box flexDirection="column" width="100%" height={terminalRows}>
       {state.help
-        ? <HelpOverlay rows={paneRows} width={width} />
+        ? <HelpOverlay rows={terminalRows - 1} width={width} />
         : (
-          <Box flexDirection="row" height={paneRows}>
-            {state.sidebarOpen && <Sidebar entries={entries} cursor={state.cursor} width={30} />}
-            <DocPane doc={docMemo} scrollTop={scrollTop} rows={paneRows} width={width} />
-          </Box>
+          <>
+            <Box flexDirection="row" width="100%" height={1}>
+              {state.sidebarOpen ? (
+                <>
+                  <Box width={30}>
+                    <Text>{paint(themeObj, 'dim', sidebarHeader)}</Text>
+                  </Box>
+                  <Text>{paint(themeObj, 'dim', '│')}</Text>
+                  <Box flexGrow={1}>
+                    <Text>{paint(themeObj, 'dim', docHeader)}</Text>
+                  </Box>
+                </>
+              ) : (
+                <Text>{paint(themeObj, 'dim', docHeader)}</Text>
+              )}
+            </Box>
+            <Box flexDirection="row" height={contentRows}>
+              {state.sidebarOpen && <Sidebar entries={entries} cursor={state.cursor} width={30} />}
+              {state.sidebarOpen && (
+                <Box flexDirection="column" width={1} height={contentRows}>
+                  {Array.from({ length: contentRows }, (_, i) => (
+                    <Text key={i}>{paint(themeObj, 'dim', '│')}</Text>
+                  ))}
+                </Box>
+              )}
+              <DocPane doc={docMemo} scrollTop={scrollTop} rows={contentRows} width={width} />
+            </Box>
+          </>
         )}
       <StatusBar theme={themeObj} path={path} line={line} total={total} themeId={state.themeId} warnings={docMemo.warnings} />
     </Box>
