@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { navOpen, navBack, navForward, nextTheme, hitTestDoc, hitTestSidebar } from '../src/core/nav.js';
+import { navOpen, navBack, navForward, navUp, nextTheme, hitTestDoc, hitTestSidebar } from '../src/core/nav.js';
 import type { UiState } from '../src/core/nav.js';
 import type { RenderedDoc } from '../src/core/types.js';
 
@@ -117,6 +117,51 @@ test('hitTestSidebar: entry at row y, null beyond list length (02 §11; guards 3
     assert.equal(e1!.name, 'b.md');
     assert.equal(hitTestSidebar(tmp, false, 2), null, 'row beyond the list → null');
     assert.equal(hitTestSidebar(tmp, false, -1), null, 'negative row → null');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('navUp: cwd up one level, cursor on the entered dir row (ISSUE-006; 02 §11)', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'trimd-19b-'));
+  const root = join(tmp, 'root');
+  const sub = join(root, 'sub');
+  const deep = join(sub, 'deep');
+  const hidden = join(root, '.hidden');
+  mkdirSync(root);
+  mkdirSync(sub);
+  mkdirSync(deep);
+  mkdirSync(hidden);
+  writeFileSync(join(root, 'a.md'), '');
+  writeFileSync(join(root, 'b.md'), '');
+  writeFileSync(join(sub, 's1.md'), '');
+  writeFileSync(join(sub, 's2.md'), '');
+  writeFileSync(join(deep, 'd.md'), '');
+  writeFileSync(join(hidden, 'h.md'), '');
+  try {
+    // leaf dir → non-root parent: back row shown in the parent → cursor = idx + 1
+    const st: UiState = { ...initialState(), cwd: deep, cursor: 3 };
+    const up = navUp(st, root, false);
+    assert.equal(up.cwd, sub, 'cwd moves to the parent');
+    assert.equal(up.cursor, 1, 'cursor = deep row (idx 0 + 1 back-row offset)');
+    assert.equal(up.stack, st.stack, 'stack untouched');
+    assert.equal(up.cur, st.cur, 'cur untouched');
+    assert.equal(up.focus, st.focus, 'focus untouched');
+    assert.equal(up.reloadTick, st.reloadTick, 'reloadTick untouched');
+
+    // depth-1 dir → root: no back row at root → cursor = idx
+    const up2 = navUp({ ...st, cwd: sub }, root, false);
+    assert.equal(up2.cwd, root, 'cwd moves to root');
+    assert.equal(up2.cursor, 0, 'cursor = sub row in the root listing (no back row)');
+
+    // at root: no-op, same state object
+    const atRoot: UiState = { ...st, cwd: root, cursor: 0 };
+    assert.equal(navUp(atRoot, root, false), atRoot, 'navUp at root returns the same state');
+
+    // fallback: child dir absent from the parent listing (hidden, showHidden=false)
+    const up3 = navUp({ ...st, cwd: hidden, cursor: 1 }, root, false);
+    assert.equal(up3.cwd, root, 'cwd still moves to root');
+    assert.equal(up3.cursor, 0, 'fallback: top row when the child dir is not listed');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

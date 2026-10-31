@@ -36,7 +36,7 @@ test('Sidebar: dirs carry ▸, cursor line is reverse video, files have no ▸ (
   (fakeStdin as unknown as { setRawMode: (e: boolean) => void }).setRawMode = () => {};
 
   const inst = render(
-    <Sidebar entries={entries} cursor={2} width={30} />,
+    <Sidebar entries={entries} cursor={2} width={30} showBack={false} />,
     { stdout: out, stdin: fakeStdin },
   );
   inst.unmount();

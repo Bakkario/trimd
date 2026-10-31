@@ -5,7 +5,7 @@ import type { MouseEvt, RenderedDoc, Theme } from '../core/types.js';
 import { paint, allThemeIds, BUILTIN_THEMES, loadUserTheme } from '../core/themes.js';
 import { renderFile } from '../core/pipeline.js';
 import { listEntries } from '../core/resolve.js';
-import { navBack, navForward, navOpen, nextTheme, hitTestDoc, hitTestSidebar } from '../core/nav.js';
+import { navBack, navForward, navOpen, navUp, nextTheme, hitTestDoc, hitTestSidebar } from '../core/nav.js';
 import { MOUSE_ENABLE, MOUSE_DISABLE, createMouseParser } from '../core/mouse.js';
 import { openExternal } from '../core/open.js';
 import type { DocState, Focus, UiState } from '../core/nav.js';
@@ -135,13 +135,22 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
       if (st.sidebarOpen && e.x < 30) {
         // INV-3.6 (am. ISSUE-003) — mouseup in the sidebar region focuses
         // the sidebar; if the row carries an entry, it is opened.
-        const entry = hitTestSidebar(st.cwd, showHidden, rowY);
+        // ISSUE-006 — when shown (cwd ≠ root) content row 0 is the `..`
+        // back row (one level up); entry rows are offset by 1.
+        const showBack = st.cwd !== root;
+        if (showBack && rowY === 0) {
+          setState((s) => ({ ...navUp(s, root, showHidden), focus: 'sidebar' }));
+          return;
+        }
+        const entry = hitTestSidebar(st.cwd, showHidden, rowY - (showBack ? 1 : 0));
         if (!entry) {
           if (st.focus !== 'sidebar') setState((s) => ({ ...s, focus: 'sidebar' }));
           return;
         }
         if (entry.isDir) {
-          setState((s) => ({ ...s, cwd: entry.abs, cursor: 0, focus: 'sidebar' }));
+          // ISSUE-006 — cursor lands on the first entry (row 1 while the
+          // back row is shown), as before the back row existed.
+          setState((s) => ({ ...s, cwd: entry.abs, cursor: entry.abs !== root ? 1 : 0, focus: 'sidebar' }));
         } else {
           setState((s) => ({ ...navOpen(s, entry.abs, renderNow), focus: 'sidebar' }));
         }
@@ -220,16 +229,25 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
 
     if (state.focus === 'sidebar') {
       // INV-3.4 — ↑/↓ move the sidebar cursor; Enter opens the entry.
-      const n = entries.length;
+      // ISSUE-006 — when shown (cwd ≠ root) row 0 is the `..` back row:
+      // ↑/↓ clamp across it, Enter on it goes up one level.
+      const showBack = state.cwd !== root;
+      const n = entries.length + (showBack ? 1 : 0);
       if (key.upArrow) {
         setState((st) => ({ ...st, cursor: Math.max(0, st.cursor - 1) }));
       } else if (key.downArrow) {
         setState((st) => ({ ...st, cursor: Math.min(Math.max(0, n - 1), st.cursor + 1) }));
       } else if (key.return) {
-        const entry = entries[state.cursor];
+        if (showBack && state.cursor === 0) {
+          setState((st) => navUp(st, root, showHidden));
+          return;
+        }
+        const entry = entries[state.cursor - (showBack ? 1 : 0)];
         if (!entry) return;
         if (entry.isDir) {
-          setState((st) => ({ ...st, cwd: entry.abs, cursor: 0 }));
+          // ISSUE-006 — cursor lands on the first entry (row 1 while the
+          // back row is shown), as before the back row existed.
+          setState((st) => ({ ...st, cwd: entry.abs, cursor: entry.abs !== root ? 1 : 0 }));
         } else {
           setState((st) => ({ ...navOpen(st, entry.abs, render), focus: 'doc' }));
         }
@@ -299,7 +317,7 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
               )}
             </Box>
             <Box flexDirection="row" height={contentRows}>
-              {state.sidebarOpen && <Sidebar entries={entries} cursor={state.cursor} width={30} />}
+              {state.sidebarOpen && <Sidebar entries={entries} cursor={state.cursor} width={30} showBack={state.cwd !== root} />}
               {state.sidebarOpen && (
                 <Box flexDirection="column" width={1} height={contentRows}>
                   {Array.from({ length: contentRows }, (_, i) => (

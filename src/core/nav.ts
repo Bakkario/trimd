@@ -1,3 +1,4 @@
+import { basename, dirname } from 'node:path';
 import type { LinkSpan, RenderedDoc } from './types.js';
 import { listEntries, type DirEntry } from './resolve.js';
 
@@ -32,6 +33,20 @@ export function navBack(st: UiState): UiState {
 
 export function navForward(st: UiState): UiState {
   return st.cur < st.stack.length - 1 ? { ...st, cur: st.cur + 1 } : st;
+}
+
+export function navUp(st: UiState, root: string, showHidden: boolean): UiState {
+  // 02 §11 / ISSUE-006 — sidebar cwd up one level. Caller guarantees
+  // cwd ≠ root (App gates on showBack = cwd !== root). Cursor (decided
+  // 2026-10-31): the row of the directory we came from in the parent's
+  // listing (+1 while the `..` back row is shown, i.e. parent ≠ root);
+  // fallback: top row.
+  if (st.cwd === root) return st;
+  const cwd = dirname(st.cwd);
+  const childName = basename(st.cwd);
+  const idx = listEntries(cwd, showHidden).findIndex((e) => e.isDir && e.name === childName);
+  const cursor = idx === -1 ? 0 : idx + (cwd !== root ? 1 : 0);
+  return { ...st, cwd, cursor };
 }
 
 export function nextTheme(st: UiState, ids: string[]): UiState {

@@ -6,31 +6,39 @@ import type { DirEntry } from '../core/resolve.js';
 // names truncated with … beyond 28 chars (ADR-013); 30-col width.
 // R-4 (ISSUE-013): an empty directory shows a dim `(no notes)` row
 // (hardcoded SGR, same pattern as the cursor row).
+// ISSUE-006: `showBack` renders a `..` back row at the top of the entry
+// area (hidden at the session root). Cursor row indices are absolute:
+// 0 = back row (when shown), i+1 = entry i (when shown), i = entry i (at root).
 export interface SidebarProps {
   entries: DirEntry[];
   cursor: number;
   width: number;
+  showBack: boolean;
 }
 
 function truncate(name: string): string {
   return name.length > 28 ? name.slice(0, 27) + '…' : name;
 }
 
-export default function Sidebar({ entries, cursor, width }: SidebarProps) {
+export default function Sidebar({ entries, cursor, width, showBack }: SidebarProps) {
+  const back = showBack ? (cursor === 0 ? '\x1b[7m  ..\x1b[0m' : '  ..') : null;
   if (entries.length === 0) {
     return (
       <Box flexDirection="column" width={width}>
+        {back !== null && <Text>{back}</Text>}
         <Text>{'\x1b[2m(no notes)\x1b[0m'}</Text>
       </Box>
     );
   }
   return (
     <Box flexDirection="column" width={width}>
+      {back !== null && <Text>{back}</Text>}
       {entries.map((e, i) => {
         const label = (e.isDir ? '▸ ' : '  ') + truncate(e.name);
+        const row = showBack ? i + 1 : i;
         return (
           <Text key={i}>
-            {i === cursor ? '\x1b[7m' + label + '\x1b[0m' : label}
+            {row === cursor ? '\x1b[7m' + label + '\x1b[0m' : label}
           </Text>
         );
       })}
