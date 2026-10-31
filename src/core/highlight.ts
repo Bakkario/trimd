@@ -15,6 +15,20 @@ export function highlightCode(code: string, lang: string | null): string {
   return out;
 }
 
+// ISSUE-005 / ADR-006 (amended) — auto-detect highlighting for `code`/unlabeled
+// fences. `highlight(code)` without a language runs highlight.js
+// `highlightAuto` inside cli-highlight (no new import or dependency).
+// Own cache: Map<code, string>.
+const autoCache = new Map<string, string>();
+
+export function highlightAuto(code: string): string {
+  const hit = autoCache.get(code);
+  if (hit !== undefined) return hit;
+  const out = highlight(code);
+  autoCache.set(code, out);
+  return out;
+}
+
 // INV-1.3 / ADR-020 — label language token for a fence info string.
 // math/latex/mermaid (case-insensitive) → 'math' (plain content, never a diagram);
 // empty or cli-highlight-unsupported → 'code'; otherwise the language itself.

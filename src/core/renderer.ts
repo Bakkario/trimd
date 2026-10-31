@@ -4,7 +4,7 @@ import type { Token } from 'markdown-it';
 import { existsSync } from 'node:fs';
 import type { LinkSpan, RenderedLine, Theme, ThemeColors } from './types.js';
 import { parseCallout } from './callouts.js';
-import { fenceLabelLang, highlightCode } from './highlight.js';
+import { fenceLabelLang, highlightAuto, highlightCode } from './highlight.js';
 
 export interface RenderCtx {
   theme: Theme;
@@ -322,7 +322,13 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       out.push([{ text: label, sgr: rctx.theme.colors.codeLabel || null }]);
       // fence token content carries a trailing newline (markdown-it) — not a code line
       const code = t.content.endsWith('\n') ? t.content.slice(0, -1) : t.content;
-      const codeStr = highlightCode(code, labelLang === 'code' || labelLang === 'math' ? null : labelLang);
+      // 02 §8 / ISSUE-005 — 'code' (empty/unsupported label) → auto-detect,
+      // 'math' → plain (INV-1.3), supported → highlightCode.
+      const codeStr = labelLang === 'math'
+        ? highlightCode(code, null)
+        : labelLang === 'code'
+          ? highlightAuto(code)
+          : highlightCode(code, labelLang);
       for (const line of codeStr.split('\n')) {
         out.push([{ text: line, sgr: null }]);
       }
