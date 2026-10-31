@@ -20,12 +20,13 @@ process.env.XDG_CONFIG_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'trimd-t1-')
 const EXPECTED_COLORS = [
   'heading1', 'heading2', 'heading3', 'heading4', 'heading5', 'heading6',
   'bold', 'italic', 'strike', 'inlineCode', 'codeLabel', 'link', 'tag', 'quote',
+  'metaLabel', 'metaKey', 'metaValue',
   'tableHead', 'tableBorder', 'hr', 'dim', 'success', 'warning', 'error', 'info',
   'calloutNote', 'calloutTip', 'calloutInfo', 'calloutSuccess', 'calloutQuestion',
   'calloutWarning', 'calloutDanger', 'sidebar', 'statusOk', 'statusWarn',
 ];
 
-test('three built-ins, 29 colors each', () => {
+test('three built-ins, 32 colors each (ISSUE-009: 29 → 32)', () => {
   assert.equal(Object.keys(BUILTIN_THEMES).length, 3);
   for (const t of Object.values(BUILTIN_THEMES) as Theme[]) {
     assert.deepEqual(Object.keys(t.colors).sort(), [...EXPECTED_COLORS].sort());

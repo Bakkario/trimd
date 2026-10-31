@@ -42,6 +42,9 @@ export interface ThemeColors {
   link: string;
   tag: string;
   quote: string;
+  metaLabel: string;
+  metaKey: string;
+  metaValue: string;
   tableHead: string;
   tableBorder: string;
   hr: string;

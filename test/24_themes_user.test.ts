@@ -24,6 +24,8 @@ writeFileSync(join(themesDir, 'bad.json'), JSON.stringify({ id: 'other', colors:
 writeFileSync(join(themesDir, 'ugly.json'), '{ not json');
 // Non-string color value.
 writeFileSync(join(themesDir, 'nstring.json'), JSON.stringify({ id: 'nstring', colors: { link: 42 } }));
+// User theme defining a new frontmatter slot (ISSUE-009).
+writeFileSync(join(themesDir, 'metaslot.json'), JSON.stringify({ id: 'metaslot', colors: { metaLabel: '35' } }));
 
 const prevXDG = process.env.XDG_CONFIG_HOME;
 process.env.XDG_CONFIG_HOME = xdg;
@@ -55,6 +57,15 @@ test("loadUserTheme('night'): merged theme — missing keys inherit from DEFAULT
   assert.equal(t!.colors.link, DEFAULT_THEME.colors.link, 'missing key inherits default');
   assert.equal(t!.colors.calloutTip, DEFAULT_THEME.colors.calloutTip, 'missing key inherits default');
   assert.equal(Object.keys(t!.colors).length, Object.keys(DEFAULT_THEME.colors).length, 'full color set');
+});
+
+test("loadUserTheme: new frontmatter slot merges in (02 §3, ISSUE-009)", () => {
+  const t = loadUserTheme('metaslot');
+  assert.ok(t !== null, 'metaslot loads');
+  assert.equal(t!.colors.metaLabel, '35', 'new slot from the user theme');
+  assert.equal(t!.colors.metaKey, DEFAULT_THEME.colors.metaKey, 'missing new slot inherits default');
+  assert.equal(t!.colors.metaValue, DEFAULT_THEME.colors.metaValue, 'missing new slot inherits default');
+  assert.equal(Object.keys(t!.colors).length, Object.keys(DEFAULT_THEME.colors).length, 'full color set (32 keys)');
 });
 
 test("loadUserTheme: id-mismatch file → ConfigError (02 §3)", () => {

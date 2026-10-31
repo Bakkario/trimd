@@ -32,13 +32,17 @@ function fmtValue(v: unknown): string {
   return String(v);
 }
 
-/** 02 §6: dim meta block; invalid YAML → single dim line of the raw text. */
+/**
+ * 02 §6 (ISSUE-009): meta block per slot — label line → `metaLabel`,
+ * key + `: ` separator → `metaKey`, value → `metaValue`; tags → `tag`.
+ * Invalid YAML → single `metaValue` line of the raw text.
+ */
 export function renderMeta(meta: FrontmatterMeta, theme: Theme): RenderedLine[] {
-  if (!meta.valid) return [{ text: paint(theme, 'dim', meta.raw), links: [] }];
-  const out: RenderedLine[] = [{ text: paint(theme, 'dim', '── metadata ──'), links: [] }];
+  if (!meta.valid) return [{ text: paint(theme, 'metaValue', meta.raw), links: [] }];
+  const out: RenderedLine[] = [{ text: paint(theme, 'metaLabel', '── metadata ──'), links: [] }];
   const data = meta.data as Record<string, unknown>;
   for (const key of Object.keys(data)) {
-    out.push({ text: paint(theme, 'dim', key + ': ' + fmtValue(data[key])), links: [] });
+    out.push({ text: paint(theme, 'metaKey', key + ': ') + paint(theme, 'metaValue', fmtValue(data[key])), links: [] });
   }
   const tags = data['tags'];
   if (Array.isArray(tags)) {
