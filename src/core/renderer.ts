@@ -146,14 +146,39 @@ function wrapCellSegs(segs: Seg[], width: number): Seg[][] {
 
 // 02 §7 / INV-1.7 — classify a markdown link href.
 //   http(s):               → link color, span kind 'http', OSC 8 url = href
+//   file:// (ISSUE-004):   → decode, drop #anchor: existing .md/.mdx →
+//                             span kind 'file' (href = abs path), in-app nav;
+//                             other existing file → span kind 'http',
+//                             href = 'file://' + abs (OSC 8 url = href);
+//                             not absolute or missing → dim text + ' ⚠'
 //   #anchor:               → dim, no span, no warning (anchor-only)
 //   local + resolved +     → link color, span kind 'file' (href = abs path),
 //     existsSync                 OSC 8 url = 'file://' + abs
 //   local + unresolved/missing → dim text + ' ⚠', no span, no OSC 8
+function fileDest(href: string): string | null {
+  // file://<abs> → decoded absolute path, or null (not absolute / bad % escape).
+  const p = href.slice('file://'.length).split('#')[0];
+  if (!p.startsWith('/')) return null;
+  try {
+    return decodeURIComponent(p);
+  } catch {
+    return null;
+  }
+}
 function linkInfo(rctx: RenderCtx, href: string): { sgr: string | null; span: LinkInfo | null; warn: boolean } {
   const theme = rctx.theme;
   if (href.startsWith('http://') || href.startsWith('https://')) {
     return { sgr: theme.colors.link || null, span: { href, kind: 'http', resolved: true }, warn: false };
+  }
+  if (href.startsWith('file://')) {
+    const abs = fileDest(href);
+    if (abs === null || !existsSync(abs)) {
+      return { sgr: theme.colors.dim || null, span: null, warn: true };
+    }
+    if (/\.(md|mdx)$/i.test(abs)) {
+      return { sgr: theme.colors.link || null, span: { href: abs, kind: 'file', resolved: true }, warn: false };
+    }
+    return { sgr: theme.colors.link || null, span: { href: 'file://' + abs, kind: 'http', resolved: true }, warn: false };
   }
   if (href.startsWith('#')) {
     return { sgr: theme.colors.dim || null, span: null, warn: false };

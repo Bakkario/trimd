@@ -80,6 +80,51 @@ test('unresolved (resolve → null): dim text + ` ⚠`, no span', () => {
   assert.equal(ls[0].links.length, 0);
 });
 
+// ISSUE-004 — file:// links classified in linkInfo.
+test('file:// to existing .md: span kind file, OSC 8 file://abs (ISSUE-004)', () => {
+  const target = join(dir, 'target.md');
+  const ls = render('see [note](file://' + target + ') now');
+  assert.equal(ls.length, 1);
+  assert.equal(ls[0].text, 'see ' + OSC('file://' + target) + LNK + 'note' + RST + OSCE + ' now');
+  assert.equal(ls[0].links.length, 1);
+  const span = ls[0].links[0];
+  assert.equal(span.href, target);
+  assert.equal(span.kind, 'file');
+  assert.equal(span.resolved, true);
+});
+
+test('file:// with %20 encoding decodes to the path (ISSUE-004)', () => {
+  const p = join(dir, 'my file.md');
+  writeFileSync(p, 'x');
+  const ls = render('[n](file://' + p.replace(' ', '%20') + ')');
+  assert.equal(ls[0].links.length, 1);
+  assert.equal(ls[0].links[0].href, p);
+  assert.equal(ls[0].links[0].kind, 'file');
+});
+
+test('file:// to existing non-md file: span kind http, href file://abs (ISSUE-004)', () => {
+  const p = join(dir, 'doc.txt');
+  writeFileSync(p, 'x');
+  const ls = render('[d](file://' + p + ')');
+  assert.equal(ls[0].text, OSC('file://' + p) + LNK + 'd' + RST + OSCE);
+  assert.equal(ls[0].links.length, 1);
+  assert.equal(ls[0].links[0].kind, 'http');
+  assert.equal(ls[0].links[0].href, 'file://' + p);
+});
+
+test('file:// missing path: dim text + ` ⚠`, no span, no OSC 8 (ISSUE-004)', () => {
+  const ls = render('[gone](file:///no/such/file.md)');
+  assert.equal(ls[0].text, DIM + 'gone' + RST + DIM + ' ⚠' + RST);
+  assert.equal(ls[0].links.length, 0);
+  assert.ok(!ls[0].text.includes('\x1b]8;'));
+});
+
+test('file:// relative (not absolute): dim text + ` ⚠`, no span (ISSUE-004)', () => {
+  const ls = render('[rel](file://relative/path.md)');
+  assert.equal(ls[0].text, DIM + 'rel' + RST + DIM + ' ⚠' + RST);
+  assert.equal(ls[0].links.length, 0);
+});
+
 after(() => {
   rmSync(dir, { recursive: true, force: true });
 });

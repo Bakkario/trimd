@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderFile } from '../src/core/pipeline.js';
@@ -57,6 +58,29 @@ test('fixture content actually rendered: meta header, callout, embed, ⚠, tag, 
   assert.ok(vs.includes('A   B') || vs.some((l) => /^A\s+B$/.test(l)));
   assert.ok(vs.includes('1   2') || vs.some((l) => /^1\s+2$/.test(l)));
   assert.ok(vs.some((l) => l.startsWith('── js')));
+});
+
+test('file:// links render as links, no raw [text](file://… (INV-1.2, ISSUE-004)', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'trimd-15-'));
+  const root = join(tmp, 'root');
+  mkdirSync(root);
+  const mdFile = join(root, 'a.md');
+  writeFileSync(mdFile, 'x');
+  const txtFile = join(root, 'b.txt');
+  writeFileSync(txtFile, 'x');
+  const noteFile = join(root, 'note.md');
+  writeFileSync(noteFile, '[t](file://' + mdFile + ') [o](file://' + txtFile + ') [m](file://' + join(root, 'missing.md') + ')\n');
+  const d = renderFile(noteFile, { root, width: 200, theme: DEFAULT_THEME, showFrontmatter: false });
+  for (const l of d.lines) {
+    const v = visible(l.text);
+    assert.ok(!/\[[^\]\n]*\]\(/.test(v), 'raw link syntax in: ' + JSON.stringify(v));
+  }
+  const spans = d.lines.flatMap((l) => l.links);
+  assert.equal(spans.length, 2, 'only the two existing targets are clickable');
+  assert.ok(spans.some((s) => s.href === mdFile && s.kind === 'file'), '.md target → in-app span');
+  assert.ok(spans.some((s) => s.href === 'file://' + txtFile && s.kind === 'http'), 'non-md target → http span with file:// href');
+  assert.deepEqual(d.warnings, ['1 unresolved links'], 'missing file:// link counted in warnings');
+  rmSync(tmp, { recursive: true, force: true });
 });
 
 test('src/core never imports ink (layering, INV-2.7)', () => {

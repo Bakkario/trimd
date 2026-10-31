@@ -63,6 +63,10 @@ let md: InstanceType<typeof MarkdownIt> | null = null;
 function getMd(): InstanceType<typeof MarkdownIt> {
   if (!md) {
     md = new MarkdownIt('default', { html: false, linkify: false, typographer: false });
+    // ISSUE-004 — accept absolute file:// destinations as links (markdown-it's
+    // default validateLink rejects them; 02 §5).
+    const origValidate = md.validateLink;
+    md.validateLink = (l) => origValidate(l) || /^file:\/\//.test(l.trim());
     md.inline.ruler.after('emphasis', 'strikethrough', strikethroughRule);
     md.use(taskLists);
     md.core.ruler.after('inline', 'trimd-task-meta', taskMetaRule);

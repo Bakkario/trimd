@@ -21,6 +21,10 @@ test("openExternal('ftp://x') → false (non-http scheme) (02 §12)", () => {
   assert.equal(openExternal('ftp://x'), false);
 });
 
-test("openExternal('file:///x') → false (only http/https are allowed) (02 §12)", () => {
+test("openExternal('file:///x') → false (decoded path missing, ISSUE-004) (02 §12)", () => {
   assert.equal(openExternal('file:///x'), false);
+});
+
+test("openExternal('file://relative/x') → false (not an absolute path, ISSUE-004) (02 §12)", () => {
+  assert.equal(openExternal('file://relative/x'), false);
 });
