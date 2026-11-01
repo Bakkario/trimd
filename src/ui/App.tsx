@@ -11,6 +11,7 @@ import { openExternal } from '../core/open.js';
 import type { DocState, Focus, UiState } from '../core/nav.js';
 import { findMatches, applySearch } from '../core/search.js';
 import { stripAnsi } from '../core/renderer.js';
+import { collectVisibleLinks, applyLinkHints, resolveHintInput, type HintTarget } from '../core/link-hints.js';
 import DocPane from './DocPane.js';
 import Sidebar from './Sidebar.js';
 import HelpOverlay from './HelpOverlay.js';
@@ -59,6 +60,8 @@ function StatusBar({
   search,
   searchMatches,
   columns,
+  linkMode,
+  transientToast,
 }: {
   theme: Theme;
   path: string;
@@ -72,6 +75,8 @@ function StatusBar({
   search: SearchState | null;
   searchMatches: number;
   columns: number;
+  linkMode?: { buf: string } | null;
+  transientToast?: string | null;
 }) {
   let leftText = `L${line} ${line}/${total}`;
   if (search && search.query) {
@@ -80,7 +85,11 @@ function StatusBar({
 
   // Key hints
   let centerText = '';
-  if (focus === 'sidebar') {
+  if (transientToast) {
+    centerText = transientToast;
+  } else if (linkMode) {
+    centerText = `l link mode: press [1-N] to open · Esc cancel${linkMode.buf ? ` (${linkMode.buf})` : ''}`;
+  } else if (focus === 'sidebar') {
     centerText = '↑↓ move · ⏎ open · ←/→ pane · ?';
   } else {
     centerText = columns >= 95
@@ -140,6 +149,8 @@ export default function App({
   }));
   const [search, setSearch] = useState<SearchState | null>(null);
   const [metaExpanded, setMetaExpanded] = useState<boolean>(initialMetaExpanded ?? false);
+  const [linkMode, setLinkMode] = useState<{ buf: string } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const cur = state.stack[state.cur];
 
   // 02 §11 / ADR-023 / ADR-026 — chrome layout: header row (row 0) + content rows +
@@ -185,6 +196,20 @@ export default function App({
   const total = activeDocMemo.lines.length;
   const maxTop = Math.max(0, total - contentRows);
   const scrollTop = Math.min(cur.scrollTop, maxTop);
+
+  const visibleHints = useMemo(() => {
+    if (!linkMode) return [];
+    return collectVisibleLinks(activeDocMemo.lines, scrollTop, contentRows);
+  }, [linkMode !== null, activeDocMemo, scrollTop, contentRows]);
+
+  const displayDoc = useMemo(() => {
+    if (!linkMode || visibleHints.length === 0) return activeDocMemo;
+    const linesSlice = activeDocMemo.lines.slice(scrollTop, scrollTop + contentRows);
+    const hintedSlice = applyLinkHints(linesSlice, visibleHints, scrollTop, themeObj, width, linkMode.buf);
+    const newLines = activeDocMemo.lines.slice();
+    newLines.splice(scrollTop, contentRows, ...hintedSlice);
+    return { ...activeDocMemo, lines: newLines };
+  }, [activeDocMemo, linkMode, visibleHints, scrollTop, contentRows, themeObj, width]);
 
   // ISSUE-017: compute sidebar scrollTop when entries exceed contentRows
   const showBack = state.cwd !== root;
@@ -411,6 +436,52 @@ export default function App({
       }
     }
 
+    // D-3.4 (ADR-028): Link-hint mode intercept
+    if (linkMode) {
+      if (key.escape || input === 'l') {
+        setLinkMode(null);
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setLinkMode((lm) => (lm ? { buf: lm.buf.slice(0, -1) } : null));
+        return;
+      }
+      if (key.return && linkMode.buf) {
+        const k = Number(linkMode.buf);
+        const target = visibleHints.find((h) => h.index === k);
+        if (target) {
+          setLinkMode(null);
+          // Activate link
+          if (target.span.kind === 'file' || target.span.kind === 'wikilink') {
+            setState((st) => ({ ...navOpen(st, target.span.href, render), focus: 'doc' }));
+          } else if (target.span.kind === 'http') {
+            openExternal(target.span.href);
+          }
+        }
+        return;
+      }
+      if (input && /^[0-9]$/.test(input)) {
+        const nextBuf = linkMode.buf + input;
+        const res = resolveHintInput(nextBuf, visibleHints.length);
+        if (res.status === 'activate') {
+          const target = visibleHints.find((h) => h.index === res.index);
+          setLinkMode(null);
+          if (target) {
+            if (target.span.kind === 'file' || target.span.kind === 'wikilink') {
+              setState((st) => ({ ...navOpen(st, target.span.href, render), focus: 'doc' }));
+            } else if (target.span.kind === 'http') {
+              openExternal(target.span.href);
+            }
+          }
+        } else if (res.status === 'pending') {
+          setLinkMode({ buf: nextBuf });
+        }
+        // invalid is ignored
+        return;
+      }
+      return;
+    }
+
     // 02 §11 — Esc: help-close (handled above) → leave sidebar focus → navBack.
     if (key.escape) {
       setState((st) => (st.focus === 'sidebar' ? { ...st, focus: 'doc' } : navBack(st)));
@@ -427,6 +498,17 @@ export default function App({
     // Phase 3 (Task 7.4, ADR-027) — m toggles compact frontmatter / full YAML (doc focus).
     if (input === 'm' && state.focus === 'doc') {
       setMetaExpanded((v) => !v);
+      return;
+    }
+    // Phase 3 (Task 8.1, ADR-028) — l enters keyboard link-hint mode (doc focus).
+    if (input === 'l' && state.focus === 'doc' && !search?.rowOpen) {
+      const hints = collectVisibleLinks(activeDocMemo.lines, scrollTop, contentRows);
+      if (hints.length === 0) {
+        setToast('no visible links');
+        setTimeout(() => setToast(null), 2000);
+      } else {
+        setLinkMode({ buf: '' });
+      }
       return;
     }
 
@@ -592,14 +674,14 @@ export default function App({
                   ))}
                 </Box>
               )}
-              {activeDocMemo.lines.length === 0 ? (
+              {displayDoc.lines.length === 0 ? (
                 // R-4 (ISSUE-013) — an empty doc renders one dim row in
                 // place of the (theme-free) DocPane.
                 <Box flexDirection="column" width={width + 5}>
                   <Text>{'  ' + paint(themeObj, 'dim', '(empty document)')}</Text>
                 </Box>
               ) : (
-                <DocPane doc={activeDocMemo} scrollTop={scrollTop} rows={contentRows} width={width} theme={themeObj} />
+                <DocPane doc={displayDoc} scrollTop={scrollTop} rows={contentRows} width={width} theme={themeObj} />
               )}
             </Box>
           </>
@@ -621,6 +703,8 @@ export default function App({
         search={search}
         searchMatches={matches.length}
         columns={stdout.columns || 80}
+        linkMode={linkMode}
+        transientToast={toast}
       />
     </Box>
   );
