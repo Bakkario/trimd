@@ -2,7 +2,7 @@
 
 import type { Token } from 'markdown-it';
 import { existsSync } from 'node:fs';
-import type { FenceBlock, LinkSpan, RenderedLine, Theme, ThemeColors } from './types.js';
+import type { FenceBlock, HeadingEntry, LinkSpan, RenderedLine, Theme, ThemeColors } from './types.js';
 import { parseCallout } from './callouts.js';
 import { fenceLabelLang, highlightAuto, highlightCode } from './highlight.js';
 
@@ -585,7 +585,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
   }
 }
 
-function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], listLevel: number, depth = 0, fences?: FenceBlock[]): void {
+function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], listLevel: number, depth = 0, fences?: FenceBlock[], headings?: HeadingEntry[]): void {
   while (i < end) {
     const t = ts[i];
     const blockSegs: Seg[][] = [];
@@ -598,6 +598,14 @@ function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][]
         const hs = headingSgr(rctx.theme, level);
         const base = hs !== null ? [hs] : [];
         const rendered = renderInline(rctx, inline.children ?? [], base);
+        const headingLine = (listLevel === 0 && depth === 0 && out.length > 0) ? out.length + 1 : out.length;
+        const plainText = (inline.children ?? [])
+          .filter((c) => c.type === 'text' || c.type === 'code_inline')
+          .map((c) => c.content)
+          .join('')
+          .trim();
+        headings?.push({ level, text: plainText, line: headingLine });
+
         if (level === 1) {
           // D-3.3: H1 = bold heading1 text line, immediately followed (no blank line)
           // by an underline of '━'.repeat(Math.min(visibleWidth(h1), 45)) in hr color.
@@ -842,12 +850,13 @@ function lineSpans(segs: Seg[], line: number): LinkSpan[] {
   return spans;
 }
 
-export function renderTokens(tokens: Token[], rctx: RenderCtx): { lines: RenderedLine[]; fences?: FenceBlock[] } {
+export function renderTokens(tokens: Token[], rctx: RenderCtx): { lines: RenderedLine[]; fences?: FenceBlock[]; headings?: HeadingEntry[] } {
   const out: Seg[][] = [];
   const fences: FenceBlock[] = [];
-  walk(tokens, 0, tokens.length, rctx, out, 0, 0, fences);
+  const headings: HeadingEntry[] = [];
+  walk(tokens, 0, tokens.length, rctx, out, 0, 0, fences, headings);
   const lines: RenderedLine[] = out.map((segs, line) => ({ text: segsToString(segs), links: lineSpans(segs, line) }));
-  return { lines, fences };
+  return { lines, fences, headings };
 }
 
 // ── Wrap (task 1.8) — 02 §8 / INV-1.10 ────────────────────────────────────

@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import type { Dirent } from 'node:fs';
 import { join } from 'node:path';
 
@@ -96,4 +96,52 @@ export function listEntries(dir: string, showHidden: boolean): DirEntry[] {
     return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   });
   return out;
+}
+
+// Phase 3 (Task 9.2, ADR-030) — read-only backlink index cached per root.
+// targetAbs → sorted unique array of sourceAbs files that link to targetAbs via [[wikilink]].
+const backlinkCache = new Map<string, Map<string, string[]>>();
+
+const WIKILINK_RE = /\[\[([^\]\n|#]+)(?:#[^\]\n|]*)?(?:\|[^\]\n]*)?\]\]/g;
+
+export function buildBacklinkIndex(root: string, idx: RootIndex): Map<string, string[]> {
+  const cached = backlinkCache.get(root);
+  if (cached) return cached;
+
+  const resolve = makeResolver(idx);
+  const out = new Map<string, Set<string>>();
+
+  // Find all .md files in the index (from exact values)
+  const sourceFiles = new Set<string>(idx.exact.values());
+
+  for (const sourceAbs of sourceFiles) {
+    let content = '';
+    try {
+      content = readFileSync(sourceAbs, 'utf8');
+    } catch {
+      continue;
+    }
+    WIKILINK_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = WIKILINK_RE.exec(content)) !== null) {
+      const targetName = m[1].trim();
+      const targetAbs = resolve(targetName);
+      if (targetAbs && targetAbs !== sourceAbs) {
+        let set = out.get(targetAbs);
+        if (!set) {
+          set = new Set<string>();
+          out.set(targetAbs, set);
+        }
+        set.add(sourceAbs);
+      }
+    }
+  }
+
+  const result = new Map<string, string[]>();
+  for (const [targetAbs, sources] of out.entries()) {
+    result.set(targetAbs, Array.from(sources).sort((a, b) => a.localeCompare(b)));
+  }
+
+  backlinkCache.set(root, result);
+  return result;
 }

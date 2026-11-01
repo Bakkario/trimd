@@ -6,7 +6,8 @@ import { FileError, FileMissingError } from './types.js';
 import { extractFrontmatter, renderMeta, renderMetaCompact } from './frontmatter.js';
 import { parseTokens } from './parse.js';
 import { renderTokens, wrapLines, type RenderCtx } from './renderer.js';
-import { buildIndex, makeResolver, type RootIndex } from './resolve.js';
+import { buildBacklinkIndex, buildIndex, makeResolver, type RootIndex } from './resolve.js';
+import { paint } from './themes.js';
 
 // 02 §5 — exact pipeline: read → frontmatter → parse → render → wrap → meta → title → warnings.
 
@@ -23,14 +24,18 @@ let indexRoot: string | null = null;
 let indexHidden: boolean = false;
 let index: RootIndex | null = null;
 
-function getResolver(ctx: PipelineCtx): (t: string) => string | null {
+function getRootIndex(ctx: PipelineCtx): RootIndex {
   const showHidden = ctx.showHidden ?? false;
   if (index === null || indexRoot !== ctx.root || indexHidden !== showHidden) {
     index = buildIndex(ctx.root, showHidden);
     indexRoot = ctx.root;
     indexHidden = showHidden;
   }
-  return makeResolver(index);
+  return index;
+}
+
+function getResolver(ctx: PipelineCtx): (t: string) => string | null {
+  return makeResolver(getRootIndex(ctx));
 }
 
 const SGR_RE = /\x1b\[[0-9;]*m/g;
@@ -79,7 +84,7 @@ export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
     sourceDir: dirname(abs),
     resolve: getResolver(ctx),
   };
-  const { lines, fences } = renderTokens(tokens, rctx);
+  const { lines, fences, headings } = renderTokens(tokens, rctx);
   const wrapped = wrapLines(lines, ctx.width);
   const outLines: typeof wrapped = [...wrapped];
   let metaLinesCount = 0;
@@ -90,6 +95,61 @@ export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
     metaLinesCount = metaLines.length;
     outLines.unshift(...metaLines);
   }
+
+  // Phase 3 (Task 9.2, ADR-030) — Read-only Linked Mentions footer
+  const rootIdx = getRootIndex(ctx);
+  const backlinkMap = buildBacklinkIndex(ctx.root, rootIdx);
+  const incoming = backlinkMap.get(abs) ?? [];
+  if (incoming.length > 0) {
+    // Blank separator rhythm before Linked Mentions section if document has content
+    if (outLines.length > 0) {
+      outLines.push({ text: '', links: [] });
+    }
+    const headerText = `── Linked Mentions (${incoming.length}) ──`;
+    outLines.push({
+      text: paint(ctx.theme, 'dim', headerText),
+      links: [],
+    });
+
+    // Form links row(s): "  ↩ Note1  ↩ Note2"
+    let currentLine = '  ';
+    let currentSpans: typeof outLines[0]['links'] = [];
+    const currentLineIdx = outLines.length;
+
+    for (let i = 0; i < incoming.length; i++) {
+      const srcAbs = incoming[i];
+      const noteBase = basename(srcAbs).replace(/\.mdx?$/i, '');
+      const label = `↩ ${noteBase}`;
+      const styledLabel = paint(ctx.theme, 'link', label);
+      // Check if adding exceeds width
+      if (currentSpans.length > 0 && (visible(currentLine).length + label.length + 2) > ctx.width) {
+        outLines.push({ text: currentLine, links: currentSpans });
+        currentLine = '  ';
+        currentSpans = [];
+      } else if (currentSpans.length > 0) {
+        currentLine += '  ';
+      }
+
+      const startCol = visible(currentLine).length;
+      const osc8 = `\x1b]8;url=file://${srcAbs}\x1b\\${styledLabel}\x1b]8;;\x1b\\`;
+      currentLine += osc8;
+      const endCol = startCol + label.length;
+
+      currentSpans.push({
+        line: outLines.length,
+        startCol,
+        endCol,
+        href: srcAbs,
+        kind: 'wikilink',
+        resolved: true,
+      });
+    }
+
+    if (currentSpans.length > 0) {
+      outLines.push({ text: currentLine, links: currentSpans });
+    }
+  }
+
   const title = titleOf(meta, tokens, abs);
   let n = 0;
   for (const l of outLines) n += (visible(l.text).match(/ \u26a0/g) ?? []).length;
@@ -102,5 +162,10 @@ export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
     endLine: f.endLine + metaLinesCount,
   }));
 
-  return { lines: outLines, meta, title, warnings, source: abs, fences: remappedFences };
+  const remappedHeadings = headings?.map((h) => ({
+    ...h,
+    line: h.line + metaLinesCount,
+  }));
+
+  return { lines: outLines, meta, title, warnings, source: abs, fences: remappedFences, headings: remappedHeadings };
 }

@@ -15,6 +15,7 @@ const ROWS: Array<[string, string]> = [
   ['/', 'find within document (doc focus)'],
   ['n N', 'next / previous search match'],
   ['l', 'keyboard link-hints mode (doc focus)'],
+  ['o', 'document outline / jump to heading (doc focus)'],
   ['m', 'toggle frontmatter YAML / compact (doc focus)'],
   ['?', 'help (any key closes)'],
 ];

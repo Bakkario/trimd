@@ -151,6 +151,8 @@ export default function App({
   const [search, setSearch] = useState<SearchState | null>(null);
   const [metaExpanded, setMetaExpanded] = useState<boolean>(initialMetaExpanded ?? false);
   const [linkMode, setLinkMode] = useState<{ buf: string } | null>(null);
+  const [outlineOpen, setOutlineOpen] = useState<boolean>(false);
+  const [outlineCursor, setOutlineCursor] = useState<number>(0);
   const [toast, setToast] = useState<string | null>(null);
   const cur = state.stack[state.cur];
 
@@ -554,6 +556,57 @@ export default function App({
       return;
     }
 
+    // Phase 3 (Task 9.2, ADR-030) — Outline mode keyboard handling
+    if (outlineOpen) {
+      if (key.escape || input === 'o') {
+        setOutlineOpen(false);
+        return;
+      }
+      const headings = activeDocMemo.headings ?? [];
+      if (headings.length === 0) {
+        setOutlineOpen(false);
+        return;
+      }
+      if (key.upArrow) {
+        setOutlineCursor((c) => Math.max(0, c - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setOutlineCursor((c) => Math.min(headings.length - 1, c + 1));
+        return;
+      }
+      if (key.return) {
+        const h = headings[outlineCursor];
+        if (h) {
+          const targetTop = Math.max(0, Math.min(maxTop, h.line));
+          setState((st) => {
+            const stack = st.stack.slice();
+            stack[st.cur] = { ...stack[st.cur], scrollTop: targetTop };
+            return { ...st, stack };
+          });
+        }
+        setOutlineOpen(false);
+        return;
+      }
+      if (input && /^[1-9]$/.test(input)) {
+        const idx = Number(input) - 1;
+        if (idx >= 0 && idx < headings.length) {
+          const h = headings[idx];
+          if (h) {
+            const targetTop = Math.max(0, Math.min(maxTop, h.line));
+            setState((st) => {
+              const stack = st.stack.slice();
+              stack[st.cur] = { ...stack[st.cur], scrollTop: targetTop };
+              return { ...st, stack };
+            });
+          }
+          setOutlineOpen(false);
+        }
+        return;
+      }
+      return;
+    }
+
     // 02 §11 — Esc: help-close (handled above) → leave sidebar focus → navBack.
     if (key.escape) {
       setState((st) => (st.focus === 'sidebar' ? { ...st, focus: 'doc' } : navBack(st)));
@@ -580,6 +633,28 @@ export default function App({
         setTimeout(() => setToast(null), 2000);
       } else {
         setLinkMode({ buf: '' });
+      }
+      return;
+    }
+    // Phase 3 (Task 9.2, ADR-030) — o toggles document outline (doc focus).
+    if (input === 'o' && state.focus === 'doc' && !search?.rowOpen) {
+      const headings = activeDocMemo.headings ?? [];
+      if (headings.length === 0) {
+        setToast('no headings in document');
+        setTimeout(() => setToast(null), 2000);
+      } else {
+        // Find nearest heading to scrollTop
+        let nearestIdx = 0;
+        let minDiff = Infinity;
+        for (let i = 0; i < headings.length; i++) {
+          const diff = Math.abs(headings[i].line - scrollTop);
+          if (diff < minDiff) {
+            minDiff = diff;
+            nearestIdx = i;
+          }
+        }
+        setOutlineCursor(nearestIdx);
+        setOutlineOpen(true);
       }
       return;
     }
@@ -778,7 +853,28 @@ export default function App({
                   ))}
                 </Box>
               )}
-              {displayDoc.lines.length === 0 ? (
+              {outlineOpen ? (
+                <Box flexDirection="column" width={width + 5} height={contentRows}>
+                  <Box flexDirection="row">
+                    <Text>{'  ' + paint(themeObj, 'heading1', '── Outline ──') + paint(themeObj, 'dim', ' (↑↓ move · Enter/1-9 jump · Esc/o close)')}</Text>
+                  </Box>
+                  {(activeDocMemo.headings ?? []).slice(0, contentRows - 1).map((h, i) => {
+                    const isSelected = i === outlineCursor;
+                    const indent = '  '.repeat(Math.max(1, h.level));
+                    const numBadge = i < 9 ? `[${i + 1}] ` : '    ';
+                    const lineInfo = ` (L${h.line + 1})`;
+                    const rowContent = `${indent}${numBadge}${h.text}${lineInfo}`;
+                    const styled = isSelected
+                      ? '\x1b[7m' + rowContent + '\x1b[27m'
+                      : (i < 9 ? indent + paint(themeObj, 'linkHint', `[${i + 1}] `) + h.text + paint(themeObj, 'dim', lineInfo) : rowContent);
+                    return (
+                      <Text key={i} wrap="truncate">
+                        {styled}
+                      </Text>
+                    );
+                  })}
+                </Box>
+              ) : displayDoc.lines.length === 0 ? (
                 // R-4 (ISSUE-013) — an empty doc renders one dim row in
                 // place of the (theme-free) DocPane.
                 <Box flexDirection="column" width={width + 5}>
