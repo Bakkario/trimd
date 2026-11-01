@@ -63,6 +63,7 @@ export interface ThemeColors {
   sidebar: string;
   statusOk: string;
   statusWarn: string;
+  search: string;
 }
 
 export interface Theme {

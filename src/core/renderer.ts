@@ -60,9 +60,14 @@ function segsToString(segs: Seg[]): string {
     .join('');
 }
 
+// 02 §8 — strip ANSI escapes (SGR and OSC 8 sequences) from a rendered string.
+export function stripAnsi(s: string): string {
+  return s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\]]*\\/g, '');
+}
+
 // 02 §8 — visible width: strip SGR and OSC 8 sequences (exact regexes), then count.
 export function visibleWidth(s: string): number {
-  return s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\]]*\\/g, '').length;
+  return stripAnsi(s).length;
 }
 
 function segsVisible(segs: Seg[]): number {
@@ -725,7 +730,7 @@ export function renderTokens(tokens: Token[], rctx: RenderCtx): { lines: Rendere
 // fragment. A LinkSpan crossing a wrap is split — each physical fragment
 // gets its own span (same href/kind, remapped line/startCol/endCol).
 
-interface WTok { text: string; sgr: string | null; url: string | null; }
+export interface WTok { text: string; sgr: string | null; url: string | null; }
 
 // SGR parameter bookkeeping for parseLineText. Only the codes chalk (the
 // cli-highlight backend) and paint() actually emit are modelled:
@@ -760,7 +765,7 @@ function applySgr(open: string[], p: string): void {
 // compound opens (\x1b[2m\x1b[36m) merge into one run. wrapLines re-emits
 // every run in the normalized \x1b[…m…\x1b[0m form, so the reset code is
 // irrelevant here.
-function parseLineText(text: string): WTok[] {
+export function parseLineText(text: string): WTok[] {
   const out: WTok[] = [];
   const open: string[] = [];
   let i = 0;

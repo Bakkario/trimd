@@ -24,6 +24,7 @@ const EXPECTED_COLORS = [
   'tableHead', 'tableBorder', 'hr', 'dim', 'success', 'warning', 'error', 'info',
   'calloutNote', 'calloutTip', 'calloutInfo', 'calloutSuccess', 'calloutQuestion',
   'calloutWarning', 'calloutDanger', 'sidebar', 'statusOk', 'statusWarn',
+  'search',
 ];
 
 test('three built-ins, 32 colors each (ISSUE-009: 29 → 32)', () => {

@@ -43,6 +43,7 @@ export const DEFAULT_THEME: Theme = {
     sidebar: '38;5;252',
     statusOk: '2;38;5;245',
     statusWarn: '38;5;214',
+    search: '38;5;214',
   },
 };
 
@@ -85,6 +86,7 @@ export const LIGHT_THEME: Theme = {
     sidebar: '38;5;241',
     statusOk: '2;38;5;241',
     statusWarn: '38;5;130',
+    search: '38;5;130',
   },
 };
 
@@ -127,6 +129,7 @@ export const DRACULA_THEME: Theme = {
     sidebar: '38;2;241;250;140',
     statusOk: '2;38;2;98;114;164',
     statusWarn: '38;2;241;250;140',
+    search: '38;2;241;250;140',
   },
 };
 
@@ -166,6 +169,7 @@ const EMPTY_COLORS: ThemeColors = {
   sidebar: '',
   statusOk: '',
   statusWarn: '',
+  search: '',
 };
 
 export const PLAIN_THEME: Theme = {

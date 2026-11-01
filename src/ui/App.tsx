@@ -9,6 +9,7 @@ import { navBack, navForward, navOpen, navUp, nextTheme, hitTestDoc, hitTestSide
 import { MOUSE_ENABLE, MOUSE_DISABLE, createMouseParser } from '../core/mouse.js';
 import { openExternal } from '../core/open.js';
 import type { DocState, Focus, UiState } from '../core/nav.js';
+import { findMatches, applySearch } from '../core/search.js';
 import DocPane from './DocPane.js';
 import Sidebar from './Sidebar.js';
 import HelpOverlay from './HelpOverlay.js';
@@ -25,6 +26,12 @@ export interface AppProps {
   sidebarOpen: boolean;
   showHidden: boolean;
   showFrontmatter: boolean;
+}
+
+export interface SearchState {
+  query: string;
+  idx: number;
+  rowOpen: boolean;
 }
 
 // ADR-023 (ISSUE-010) — pane-header labels must never wrap: truncate
@@ -76,15 +83,14 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
     help: false,
     reloadTick: 0,
   }));
+  const [search, setSearch] = useState<SearchState | null>(null);
   const cur = state.stack[state.cur];
 
   // 02 §11 / ADR-023 — chrome layout: header row (row 0) + content rows +
-  // status row. Content rows = terminalRows − 2 (was terminalRows − 1).
-  // Effective doc width = terminalCols − (sidebarOpen ? 31 : 0) (sidebar 30
-  // + separator 1), min 40.
+  // status row. When search row is open, content rows = terminalRows - 3.
   const stdout = useStdout().stdout as NodeJS.WritableStream & { rows?: number; columns?: number };
   const terminalRows = stdout.rows || 24;
-  const contentRows = Math.max(1, terminalRows - 2);
+  const contentRows = Math.max(1, terminalRows - 2 - (search?.rowOpen ? 1 : 0));
   const width = Math.max((stdout.columns || 80) - (state.sidebarOpen ? 31 : 0), 40);
 
   // 02 §11 / INV-3.8 — the theme object follows state.themeId (T cycles it
@@ -109,7 +115,18 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
     [state.cwd, showHidden, state.reloadTick],
   );
 
-  const total = docMemo.lines.length;
+  const matches = useMemo(
+    () => (search ? findMatches(docMemo.lines, search.query) : []),
+    [docMemo, search?.query],
+  );
+
+  const activeDocMemo = useMemo(() => {
+    if (!search || matches.length === 0) return docMemo;
+    const clampedIdx = Math.max(0, Math.min(search.idx, matches.length - 1));
+    return applySearch(docMemo, matches, clampedIdx, themeObj);
+  }, [docMemo, matches, search?.idx, themeObj]);
+
+  const total = activeDocMemo.lines.length;
   const maxTop = Math.max(0, total - contentRows);
   const scrollTop = Math.min(cur.scrollTop, maxTop);
 
@@ -117,20 +134,22 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
   // left-button release. The parser callback reads the latest view through a
   // ref, so the listener (and the enable/disable mode bytes) attach exactly
   // once per mount instead of per state change.
-  const view = useRef({ state, doc: docMemo, scrollTop, render, contentRows });
-  view.current = { state, doc: docMemo, scrollTop, render, contentRows };
+  const view = useRef({ state, doc: activeDocMemo, scrollTop, render, contentRows, searchRowOpen: search?.rowOpen });
+  view.current = { state, doc: activeDocMemo, scrollTop, render, contentRows, searchRowOpen: search?.rowOpen };
 
   useEffect(() => {
     process.stdout.write(MOUSE_ENABLE);
     const p = createMouseParser((e: MouseEvt) => {
       if (e.action !== 'release' || e.button !== 0) return;
-      const { state: st, doc, scrollTop: top, render: renderNow, contentRows: crows } = view.current;
+      const { state: st, doc, scrollTop: top, render: renderNow, contentRows: crows, searchRowOpen } = view.current;
       // ADR-023 (ISSUE-010) — the status row (and anything below it) is not
       // clickable.
-      if (e.y >= crows) return;
-      // ADR-023 — content starts below the header row; a click on the header
-      // row itself is a no-op.
-      const rowY = e.y - 1;
+      const searchOffset = searchRowOpen ? 1 : 0;
+      if (e.y >= crows + searchOffset) return;
+      // ADR-023 — content starts below the header row (and search row if open);
+      // clicks on header row or search input row are no-ops.
+      if (searchRowOpen && e.y === 1) return;
+      const rowY = e.y - 1 - searchOffset;
       if (rowY < 0) return;
       if (st.sidebarOpen && e.x < 30) {
         // INV-3.6 (am. ISSUE-003) — mouseup in the sidebar region focuses
@@ -190,6 +209,115 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
     if (state.help) {
       setState((st) => ({ ...st, help: false }));
       return;
+    }
+
+    // ISSUE-015: If search row is open, it captures all keys (command-line mode) except q
+    if (search?.rowOpen) {
+      if (key.escape) {
+        if (!search.query) {
+          setSearch(null);
+        } else {
+          setSearch({ ...search, rowOpen: false });
+        }
+        return;
+      }
+      if (key.return) {
+        setSearch({ ...search, rowOpen: false });
+        return;
+      }
+      if (input === '/' && !search.query) {
+        // no-op on initial '/' when opening
+        return;
+      }
+      if (input === 'n' || input === 'N') {
+        if (matches.length > 0) {
+          const delta = input === 'n' ? 1 : -1;
+          const nextIdx = (search.idx + delta + matches.length) % matches.length;
+          setSearch({ ...search, idx: nextIdx });
+          const m = matches[nextIdx];
+          const targetTop = Math.max(0, Math.min(m.line - Math.floor(contentRows / 2), maxTop));
+          setState((st) => {
+            const stack = st.stack.slice();
+            stack[st.cur] = { ...stack[st.cur], scrollTop: targetTop };
+            return { ...st, stack };
+          });
+        }
+        return;
+      }
+      if (key.backspace || key.delete) {
+        const nextQ = search.query.slice(0, -1);
+        const nextMs = findMatches(docMemo.lines, nextQ);
+        const nextIdx = nextMs.length === 0 ? 0 : Math.min(search.idx, nextMs.length - 1);
+        setSearch({ query: nextQ, idx: nextIdx, rowOpen: true });
+        if (nextMs.length > 0) {
+          const m = nextMs[nextIdx];
+          const targetTop = Math.max(0, Math.min(m.line - Math.floor(contentRows / 2), maxTop));
+          setState((st) => {
+            const stack = st.stack.slice();
+            stack[st.cur] = { ...stack[st.cur], scrollTop: targetTop };
+            return { ...st, stack };
+          });
+        }
+        return;
+      }
+      if (input && !key.ctrl && !key.meta) {
+        const nextQ = search.query + input;
+        const nextMs = findMatches(docMemo.lines, nextQ);
+        setSearch({ query: nextQ, idx: 0, rowOpen: true });
+        if (nextMs.length > 0) {
+          const m = nextMs[0];
+          const targetTop = Math.max(0, Math.min(m.line - Math.floor(contentRows / 2), maxTop));
+          setState((st) => {
+            const stack = st.stack.slice();
+            stack[st.cur] = { ...stack[st.cur], scrollTop: targetTop };
+            return { ...st, stack };
+          });
+        }
+        return;
+      }
+      return;
+    }
+
+    // ISSUE-015: In-doc search navigation keys when doc focused
+    if (state.focus === 'doc') {
+      if (input === '/') {
+        setSearch((s) => ({
+          query: s ? s.query : '',
+          idx: s ? s.idx : 0,
+          rowOpen: true,
+        }));
+        return;
+      }
+      if (search && matches.length > 0) {
+        if (input === 'n') {
+          const nextIdx = (search.idx + 1) % matches.length;
+          setSearch({ ...search, idx: nextIdx });
+          const m = matches[nextIdx];
+          const targetTop = Math.max(0, Math.min(m.line - Math.floor(contentRows / 2), maxTop));
+          setState((st) => {
+            const stack = st.stack.slice();
+            stack[st.cur] = { ...stack[st.cur], scrollTop: targetTop };
+            return { ...st, stack };
+          });
+          return;
+        }
+        if (input === 'N') {
+          const nextIdx = (search.idx - 1 + matches.length) % matches.length;
+          setSearch({ ...search, idx: nextIdx });
+          const m = matches[nextIdx];
+          const targetTop = Math.max(0, Math.min(m.line - Math.floor(contentRows / 2), maxTop));
+          setState((st) => {
+            const stack = st.stack.slice();
+            stack[st.cur] = { ...stack[st.cur], scrollTop: targetTop };
+            return { ...st, stack };
+          });
+          return;
+        }
+      }
+      if (key.escape && search) {
+        setSearch(null);
+        return;
+      }
     }
 
     // 02 §11 — Esc: help-close (handled above) → leave sidebar focus → navBack.
@@ -316,6 +444,23 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
                 <Text>{docHeaderText}</Text>
               )}
             </Box>
+            {search?.rowOpen && (
+              <Box flexDirection="row" width="100%" height={1}>
+                {state.sidebarOpen ? (
+                  <>
+                    <Box width={30}>
+                      <Text>{' '.repeat(30)}</Text>
+                    </Box>
+                    <Text>{paint(themeObj, 'dim', '│')}</Text>
+                    <Box flexGrow={1}>
+                      <Text>{paint(themeObj, 'search', '? ' + search.query + '▌')}</Text>
+                    </Box>
+                  </>
+                ) : (
+                  <Text>{paint(themeObj, 'search', '? ' + search.query + '▌')}</Text>
+                )}
+              </Box>
+            )}
             <Box flexDirection="row" height={contentRows}>
               {state.sidebarOpen && <Sidebar entries={entries} cursor={state.cursor} width={30} showBack={state.cwd !== root} />}
               {state.sidebarOpen && (
@@ -325,19 +470,31 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
                   ))}
                 </Box>
               )}
-              {docMemo.lines.length === 0 ? (
+              {activeDocMemo.lines.length === 0 ? (
                 // R-4 (ISSUE-013) — an empty doc renders one dim row in
                 // place of the (theme-free) DocPane.
                 <Box flexDirection="column" width={width}>
                   <Text>{paint(themeObj, 'dim', '(empty document)')}</Text>
                 </Box>
               ) : (
-                <DocPane doc={docMemo} scrollTop={scrollTop} rows={contentRows} width={width} />
+                <DocPane doc={activeDocMemo} scrollTop={scrollTop} rows={contentRows} width={width} />
               )}
             </Box>
           </>
         )}
-      <StatusBar theme={themeObj} path={path} line={line} total={total} themeId={state.themeId} warnings={docMemo.warnings} focus={state.focus} />
+      <StatusBar
+        theme={themeObj}
+        path={path}
+        line={line}
+        total={total}
+        themeId={state.themeId}
+        warnings={
+          search && search.query && matches.length === 0
+            ? [...docMemo.warnings, 'no matches']
+            : docMemo.warnings
+        }
+        focus={state.focus}
+      />
     </Box>
   );
 }

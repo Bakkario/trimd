@@ -12,6 +12,8 @@ const ROWS: Array<[string, string]> = [
   ['F', 'forward'],
   ['r', 'reload'],
   ['T', 'cycle theme'],
+  ['/', 'find within document (doc focus)'],
+  ['n N', 'next / previous search match'],
   ['?', 'help (any key closes)'],
 ];
 
