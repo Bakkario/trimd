@@ -54,6 +54,19 @@ Exit codes: `0` quit/help · `1` file missing · `2` file unreadable / root walk
 | `B` / `F` | Navigate back / forward |
 | `r` | Reload (re-render the current document) |
 | `T` | Cycle themes (built-ins, then user themes, wrapping); the status bar shows the current theme id |
+| `/` | Find within document (doc focus; Esc closes row / clears search) |
+| `n` / `N` | Next / previous search match |
+| `l` | Keyboard link-hint mode (numbers visible links `[1..N]`, press number to follow) |
+| `y` | Copy code block in view to system clipboard via OSC 52 (or pick block if multiple) |
+| `o` | Document outline TOC (jump to heading via `↑↓` + Enter or digits `1-9`) |
+| `m` | Toggle frontmatter display between compact pill strip and full YAML |
+| Mouse Wheel | Scroll document or sidebar by ±3 lines |
+
+## SSH & OSC 52 Clipboard
+
+Trimd is built for SSH and remote tmux environments:
+- External links (`http(s)`) opened while connected over SSH (detected via `SSH_CONNECTION`, `SSH_TTY`, `SSH_CLIENT`) copy the URL to your local machine clipboard using `OSC 52` rather than failing to spawn `xdg-open` on the remote host.
+- Pressing `y` or clicking `[y copy]` on code fence headers copies the code block directly to your client clipboard via `OSC 52` (with transparent tmux DCS passthrough).
 
 ## Theming
 
@@ -73,7 +86,7 @@ User themes live in `$XDG_CONFIG_HOME/trimd/themes/` (default `~/.config/trimd/t
 }
 ```
 
-Color keys: `heading1`–`heading6`, `bold`, `italic`, `strike`, `inlineCode`, `codeLabel`, `link`, `tag`, `quote`, `tableHead`, `tableBorder`, `hr`, `dim`, `success`, `warning`, `error`, `info`, `calloutNote`, `calloutTip`, `calloutInfo`, `calloutSuccess`, `calloutQuestion`, `calloutWarning`, `calloutDanger`, `sidebar`, `statusOk`, `statusWarn`.
+Color keys: `heading1`–`heading6`, `bold`, `italic`, `strike`, `inlineCode`, `codeLabel`, `link`, `tag`, `quote`, `tableHead`, `tableBorder`, `hr`, `dim`, `success`, `warning`, `error`, `info`, `calloutNote`, `calloutTip`, `calloutInfo`, `calloutSuccess`, `calloutQuestion`, `calloutWarning`, `calloutDanger`, `sidebar`, `statusOk`, `statusWarn`, `search`, `headerBg`, `accentPill`, `codeBg`, `calloutBg`, `tagChip`, `linkHint`, `activeDoc`, `scrollbar`.
 
 ## Config
 
