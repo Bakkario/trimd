@@ -44,6 +44,14 @@ export const DEFAULT_THEME: Theme = {
     statusOk: '2;38;5;245',
     statusWarn: '38;5;214',
     search: '38;5;214',
+    headerBg: '48;5;235',
+    accentPill: '1;38;5;232;48;5;51',
+    codeBg: '48;5;234',
+    calloutBg: '48;5;235',
+    tagChip: '38;5;208;48;5;236',
+    linkHint: '1;38;5;232;48;5;214',
+    activeDoc: '1;38;5;51',
+    scrollbar: '38;5;39',
   },
 };
 
@@ -87,6 +95,14 @@ export const LIGHT_THEME: Theme = {
     statusOk: '2;38;5;241',
     statusWarn: '38;5;130',
     search: '38;5;130',
+    headerBg: '48;5;254',
+    accentPill: '1;38;5;255;48;5;25',
+    codeBg: '48;5;255',
+    calloutBg: '48;5;254',
+    tagChip: '38;5;88;48;5;253',
+    linkHint: '1;38;5;255;48;5;130',
+    activeDoc: '1;38;5;25',
+    scrollbar: '38;5;25',
   },
 };
 
@@ -130,6 +146,14 @@ export const DRACULA_THEME: Theme = {
     statusOk: '2;38;2;98;114;164',
     statusWarn: '38;2;241;250;140',
     search: '38;2;241;250;140',
+    headerBg: '48;2;24;27;40',
+    accentPill: '1;38;2;15;17;23;48;2;139;233;253',
+    codeBg: '48;2;22;25;37',
+    calloutBg: '48;2;36;30;20',
+    tagChip: '38;2;255;121;198;48;2;40;28;51',
+    linkHint: '1;38;2;15;17;23;48;2;255;184;108',
+    activeDoc: '1;38;2;139;233;253',
+    scrollbar: '38;2;189;147;249',
   },
 };
 
@@ -170,6 +194,14 @@ const EMPTY_COLORS: ThemeColors = {
   statusOk: '',
   statusWarn: '',
   search: '',
+  headerBg: '',
+  accentPill: '',
+  codeBg: '',
+  calloutBg: '',
+  tagChip: '',
+  linkHint: '',
+  activeDoc: '',
+  scrollbar: '',
 };
 
 export const PLAIN_THEME: Theme = {

@@ -64,6 +64,14 @@ export interface ThemeColors {
   statusOk: string;
   statusWarn: string;
   search: string;
+  headerBg: string;
+  accentPill: string;
+  codeBg: string;
+  calloutBg: string;
+  tagChip: string;
+  linkHint: string;
+  activeDoc: string;
+  scrollbar: string;
 }
 
 export interface Theme {

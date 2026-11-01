@@ -25,14 +25,19 @@ const EXPECTED_COLORS = [
   'calloutNote', 'calloutTip', 'calloutInfo', 'calloutSuccess', 'calloutQuestion',
   'calloutWarning', 'calloutDanger', 'sidebar', 'statusOk', 'statusWarn',
   'search',
+  'headerBg', 'accentPill', 'codeBg', 'calloutBg', 'tagChip', 'linkHint', 'activeDoc', 'scrollbar',
 ];
 
-test('three built-ins, 32 colors each (ISSUE-009: 29 → 32)', () => {
+test('three built-ins, 41 colors each (Phase 3 Task 6.1)', () => {
   assert.equal(Object.keys(BUILTIN_THEMES).length, 3);
+  const phase3Slots = ['headerBg', 'accentPill', 'codeBg', 'calloutBg', 'tagChip', 'linkHint', 'activeDoc', 'scrollbar'] as const;
   for (const t of Object.values(BUILTIN_THEMES) as Theme[]) {
     assert.deepEqual(Object.keys(t.colors).sort(), [...EXPECTED_COLORS].sort());
     assert.ok(typeof t.id === 'string' && t.id.length > 0);
     assert.ok(typeof t.name === 'string' && t.name.length > 0);
+    for (const slot of phase3Slots) {
+      assert.ok(t.colors[slot].length > 0, `built-in ${t.id} has non-empty ${slot}`);
+    }
   }
 });
 
