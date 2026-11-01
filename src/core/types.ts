@@ -108,7 +108,7 @@ export interface MouseEvt {
   x: number;
   y: number;
   button: 0 | 1 | 2; // 0 = left
-  action: 'press' | 'release' | 'move';
+  action: 'press' | 'release' | 'move' | 'wheelUp' | 'wheelDown';
 }
 
 export class FileMissingError extends Error {

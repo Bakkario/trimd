@@ -25,13 +25,23 @@ export function createMouseParser(onEvt: (e: MouseEvt) => void): (chunk: string)
     let last = 0;
     re.lastIndex = 0;
     while ((m = re.exec(buf)) !== null) {
-      // Only the left button is emitted; all other codes ignored (ADR-012).
-      if (isLeftButton(m[1], m[4])) {
+      const code = m[1];
+      const term = m[4];
+      const x = Number(m[2]) - 1; // protocol 1-based → 0-based
+      const y = Number(m[3]) - 1;
+
+      // 02 §10 / D-3.6 (ADR-030): Wheel events
+      if (code === '64') {
+        onEvt({ button: 0, action: 'wheelUp', x, y });
+      } else if (code === '65') {
+        onEvt({ button: 0, action: 'wheelDown', x, y });
+      } else if (isLeftButton(code, term)) {
+        // Only the left button is emitted; all other codes ignored (ADR-012).
         onEvt({
           button: 0,
-          action: m[4] === 'M' ? 'press' : 'release',
-          x: Number(m[2]) - 1, // protocol 1-based → 0-based
-          y: Number(m[3]) - 1,
+          action: term === 'M' ? 'press' : 'release',
+          x,
+          y,
         });
       }
       last = m.index + m[0].length;

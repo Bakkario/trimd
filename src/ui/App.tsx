@@ -247,6 +247,30 @@ export default function App({
   useEffect(() => {
     process.stdout.write(MOUSE_ENABLE);
     const p = createMouseParser((e: MouseEvt) => {
+      // D-3.6 (ADR-030): Mouse wheel events
+      if (e.action === 'wheelUp' || e.action === 'wheelDown') {
+        const { state: st, doc, scrollTop: top, contentRows: crows } = view.current;
+        const delta = e.action === 'wheelUp' ? -3 : 3;
+
+        if (st.sidebarOpen && e.x < 30) {
+          // Scroll sidebar cursor
+          const showBack = st.cwd !== root;
+          const n = entries.length + (showBack ? 1 : 0);
+          setState((s) => ({ ...s, cursor: Math.max(0, Math.min(n - 1, s.cursor + delta)) }));
+        } else {
+          // Scroll doc scrollTop by ±3 lines
+          const totalLines = doc.lines.length;
+          const maxT = Math.max(0, totalLines - crows);
+          setState((s) => {
+            const stack = s.stack.slice();
+            const nextTop = Math.max(0, Math.min(maxT, stack[s.cur].scrollTop + delta));
+            stack[s.cur] = { ...stack[s.cur], scrollTop: nextTop };
+            return { ...s, stack };
+          });
+        }
+        return;
+      }
+
       if (e.action !== 'release' || e.button !== 0) return;
       const { state: st, doc, scrollTop: top, render: renderNow, contentRows: crows, searchRowOpen } = view.current;
       // ADR-023 (ISSUE-010) — the status row (and anything below it) is not

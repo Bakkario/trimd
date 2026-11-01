@@ -57,9 +57,9 @@ test('split mid-coordinates across chunks still parses (02 §10)', () => {
   assert.deepEqual(events, [{ button: 0, action: 'press', x: 10, y: 5 }]);
 });
 
-test('non-left buttons ignored: 1/2 (Konsole mid/right), 33/34 (xterm right/mid), 36 (motion), 64/65/66/67 (wheel), 128+ (ext) (02 §10)', () => {
+test('non-left non-wheel buttons ignored: 1/2 (Konsole mid/right), 33/34 (xterm right/mid), 36 (motion), 66/67 (extra wheel), 128+ (ext) (02 §10)', () => {
   const { events, feed } = collect();
-  for (const code of ['1', '2', '33', '34', '36', '64', '65', '66', '67', '128', '192']) {
+  for (const code of ['1', '2', '33', '34', '36', '66', '67', '128', '192']) {
     feed(`\x1b[<${code};11;6M`);
     feed(`\x1b[<${code};11;6m`);
   }
