@@ -825,10 +825,42 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
     const toks = parseLineText(line.text);
     const spanAt = (col: number): LinkSpan | undefined =>
       line.links.find((s) => s.startCol <= col && col < s.endCol);
+
+    // ISSUE-016: Check for blockquote/callout prefix (sequence of '│ ' optionally followed by '  ')
+    interface PrefixPart { tok: WTok; text: string; oldCol: number; }
+    const prefixParts: PrefixPart[] = [];
+    let tokIdx = 0;
+    let scanCol = 0;
+    while (tokIdx < toks.length) {
+      const tok = toks[tokIdx];
+      if (tok.text === '│ ') {
+        prefixParts.push({ tok, text: '│ ', oldCol: scanCol });
+        scanCol += 2;
+        tokIdx++;
+      } else {
+        break;
+      }
+    }
+    if (prefixParts.length > 0 && tokIdx < toks.length) {
+      const tok = toks[tokIdx];
+      if (tok.text === '  ' || tok.text.startsWith('  ')) {
+        prefixParts.push({ tok, text: '  ', oldCol: scanCol });
+        scanCol += 2;
+        // If tok.text was longer than 2 spaces, slice the rest
+        if (tok.text.length > 2) {
+          toks[tokIdx] = { ...tok, text: tok.text.slice(2) };
+        } else {
+          tokIdx++;
+        }
+      }
+    }
+    const prefixWidth = prefixParts.reduce((acc, p) => acc + p.text.length, 0);
+
     const units: { text: string; tok: WTok; oldCol: number }[] = [];
     {
-      let col = 0;
-      for (const tok of toks) {
+      let col = scanCol;
+      for (let i = tokIdx; i < toks.length; i++) {
+        const tok = toks[i];
         let k = 0;
         while (k < tok.text.length) {
           const space = tok.text[k] === ' ';
@@ -859,26 +891,45 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
     const physLines: Frag[][] = [];
     let cur: Frag[] = [];
     let curW = 0;
+
+    const startLineWithPrefix = (): void => {
+      let pCol = 0;
+      for (const p of prefixParts) {
+        cur.push({ text: p.text, tok: p.tok, oldCol: p.oldCol, newCol: pCol });
+        pCol += p.text.length;
+      }
+      curW = pCol;
+    };
+
     const pushLine = (): void => {
       if (cur.length) { physLines.push(cur); cur = []; curW = 0; }
     };
     const emitWord = (ent: { word: string; tok: WTok; oldCol: number }): void => {
       let pos = 0;
       while (pos < ent.word.length) {
-        if (curW >= width) pushLine();
+        if (curW >= width) {
+          pushLine();
+          startLineWithPrefix();
+        }
         const take = Math.min(width - curW, ent.word.length - pos);
         cur.push({ text: ent.word.slice(pos, pos + take), tok: ent.tok, oldCol: ent.oldCol + pos, newCol: curW });
         curW += take;
         pos += take;
       }
     };
+
+    startLineWithPrefix();
+
     for (let e = 0; e < entries.length; e++) {
       const ent = entries[e];
       let sp = '';
       let spTok: WTok | null = null;
       if (e > 0) { sp = entries[e - 1].trail; spTok = entries[e - 1].trailTok; }
-      if (cur.length === 0 || curW + sp.length + ent.word.length > width) {
-        pushLine();
+      if (cur.length === prefixParts.length || curW + sp.length + ent.word.length > width) {
+        if (cur.length > prefixParts.length) {
+          pushLine();
+          startLineWithPrefix();
+        }
         emitWord(ent);
       } else {
         if (sp.length) cur.push({ text: sp, tok: spTok ?? ent.tok, oldCol: ent.oldCol - sp.length, newCol: curW });
