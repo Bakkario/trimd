@@ -7,7 +7,8 @@ import { renderFile } from '../core/pipeline.js';
 import { listEntries } from '../core/resolve.js';
 import { navBack, navForward, navOpen, navUp, nextTheme, hitTestDoc, hitTestSidebar } from '../core/nav.js';
 import { MOUSE_ENABLE, MOUSE_DISABLE, createMouseParser } from '../core/mouse.js';
-import { openExternal } from '../core/open.js';
+import { openExternal, canOpen } from '../core/open.js';
+import { encodeOsc52, isSshSession } from '../core/clipboard.js';
 import type { DocState, Focus, UiState } from '../core/nav.js';
 import { findMatches, applySearch } from '../core/search.js';
 import { stripAnsi } from '../core/renderer.js';
@@ -304,8 +305,25 @@ export default function App({
         if (st.focus !== 'doc') setState((s) => ({ ...s, focus: 'doc' }));
         return;
       }
+      if (span.kind === 'copy') {
+        const fenceIdx = Number(span.href.replace('copy:', ''));
+        const fence = doc.fences?.[fenceIdx];
+        if (fence) {
+          process.stdout.write(encodeOsc52(fence.raw, process.env));
+          setToast(`copied ${fence.lang} block`);
+          setTimeout(() => setToast(null), 2000);
+        }
+        if (st.focus !== 'doc') setState((s) => ({ ...s, focus: 'doc' }));
+        return;
+      }
       if (span.kind === 'http') {
-        openExternal(span.href);
+        if (isSshSession(process.env) || !canOpen()) {
+          process.stdout.write(encodeOsc52(span.href, process.env));
+          setToast('copied URL to clipboard (SSH)');
+          setTimeout(() => setToast(null), 2000);
+        } else {
+          openExternal(span.href);
+        }
         if (st.focus !== 'doc') setState((s) => ({ ...s, focus: 'doc' }));
         return;
       }
@@ -454,8 +472,22 @@ export default function App({
           // Activate link
           if (target.span.kind === 'file' || target.span.kind === 'wikilink') {
             setState((st) => ({ ...navOpen(st, target.span.href, render), focus: 'doc' }));
+          } else if (target.span.kind === 'copy') {
+            const fenceIdx = Number(target.span.href.replace('copy:', ''));
+            const fence = activeDocMemo.fences?.[fenceIdx];
+            if (fence) {
+              stdout.write(encodeOsc52(fence.raw, process.env));
+              setToast(`copied ${fence.lang} block`);
+              setTimeout(() => setToast(null), 2000);
+            }
           } else if (target.span.kind === 'http') {
-            openExternal(target.span.href);
+            if (isSshSession(process.env) || !canOpen()) {
+              stdout.write(encodeOsc52(target.span.href, process.env));
+              setToast('copied URL to clipboard (SSH)');
+              setTimeout(() => setToast(null), 2000);
+            } else {
+              openExternal(target.span.href);
+            }
           }
         }
         return;
@@ -469,8 +501,22 @@ export default function App({
           if (target) {
             if (target.span.kind === 'file' || target.span.kind === 'wikilink') {
               setState((st) => ({ ...navOpen(st, target.span.href, render), focus: 'doc' }));
+            } else if (target.span.kind === 'copy') {
+              const fenceIdx = Number(target.span.href.replace('copy:', ''));
+              const fence = activeDocMemo.fences?.[fenceIdx];
+              if (fence) {
+                stdout.write(encodeOsc52(fence.raw, process.env));
+                setToast(`copied ${fence.lang} block`);
+                setTimeout(() => setToast(null), 2000);
+              }
             } else if (target.span.kind === 'http') {
-              openExternal(target.span.href);
+              if (isSshSession(process.env) || !canOpen()) {
+                stdout.write(encodeOsc52(target.span.href, process.env));
+                setToast('copied URL to clipboard (SSH)');
+                setTimeout(() => setToast(null), 2000);
+              } else {
+                openExternal(target.span.href);
+              }
             }
           }
         } else if (res.status === 'pending') {
@@ -507,6 +553,26 @@ export default function App({
         setToast('no visible links');
         setTimeout(() => setToast(null), 2000);
       } else {
+        setLinkMode({ buf: '' });
+      }
+      return;
+    }
+    // Phase 3 (Task 8.2, ADR-029) — y code copy (doc focus).
+    if (input === 'y' && state.focus === 'doc' && !search?.rowOpen) {
+      const fences = activeDocMemo.fences ?? [];
+      const viewBottom = scrollTop + contentRows;
+      const visibleFences = fences.filter((f) => f.endLine >= scrollTop && f.line < viewBottom);
+
+      if (visibleFences.length === 0) {
+        setToast('no code block in view');
+        setTimeout(() => setToast(null), 2000);
+      } else if (visibleFences.length === 1) {
+        const fence = visibleFences[0];
+        stdout.write(encodeOsc52(fence.raw, process.env));
+        setToast(`copied ${fence.lang} block`);
+        setTimeout(() => setToast(null), 2000);
+      } else {
+        // Multiple fences visible: enter linkMode so user can pick via hints
         setLinkMode({ buf: '' });
       }
       return;

@@ -326,7 +326,7 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
 // Renders the single non-list block starting at ts[i] (paragraph_open, hr, fence,
 // blockquote_open, standalone inline, html_block, or default). Pushes its line(s)
 // into out and returns the index after the block.
-function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], depth = 0, fences?: FenceBlock[]): number {
+function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], depth = 0, fences?: FenceBlock[], lineOffset = 0): number {
   const t = ts[i];
   switch (t.type) {
     case 'paragraph_open': {
@@ -368,7 +368,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
         headerLine.push({ text: ' '.repeat(rctx.width - headerVis), sgr: codeBg });
       }
 
-      const fenceStartLine = out.length;
+      const fenceStartLine = out.length + lineOffset;
       out.push(headerLine);
 
       // fence token content carries a trailing newline (markdown-it) — not a code line
@@ -409,7 +409,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       if (fences) {
         fences.push({
           line: fenceStartLine,
-          endLine: out.length - 1,
+          endLine: out.length - 1 + lineOffset,
           lang: labelLang,
           raw: rawCode,
         });
@@ -634,9 +634,11 @@ function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][]
         nextI = j;
         break;
       }
-      default:
-        nextI = renderOneBlock(ts, i, end, rctx, blockSegs, depth, fences);
+      default: {
+        const lineOffset = (listLevel === 0 && depth === 0 && out.length > 0) ? out.length + 1 : out.length;
+        nextI = renderOneBlock(ts, i, end, rctx, blockSegs, depth, fences, lineOffset);
         break;
+      }
     }
 
     if (blockSegs.length > 0) {
@@ -644,6 +646,7 @@ function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][]
       if (listLevel === 0 && depth === 0 && out.length > 0) {
         out.push([]);
       }
+      const blockStartLine = out.length;
       out.push(...blockSegs);
     }
     i = nextI;
