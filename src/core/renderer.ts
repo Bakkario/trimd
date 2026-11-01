@@ -116,13 +116,21 @@ export function charWidth(cp: number): number {
     (cp >= 0x1f680 && cp <= 0x1f6ff) ||
     (cp >= 0x1f900 && cp <= 0x1f9ff) ||
     (cp >= 0x1fa70 && cp <= 0x1faff) ||
-    cp === 0x26a1 || // ⚡
+    // Miscellaneous symbols and dingbats that render as width 2 in terminals
+    (cp >= 0x2600 && cp <= 0x27bf &&
+      cp !== 0x2610 && // ☐ unchecked task box
+      cp !== 0x2611 && // ☑
+      cp !== 0x26a0 && // ⚠ warning triangle
+      cp !== 0x2713 && // ✓
+      cp !== 0x2714 && // ✔ checked task box
+      cp !== 0x2715 && // ✕
+      cp !== 0x2716 && // ✖
+      cp !== 0x2717 && // ✗
+      cp !== 0x2718 && // ✘
+      cp !== 0x2731    // ✱ git mod
+    ) ||
     cp === 0x23f3 || // ⏳
-    cp === 0x231a || cp === 0x231b ||
-    cp === 0x2614 || cp === 0x2615 ||
-    cp === 0x26bd || cp === 0x26be ||
-    cp === 0x26c4 || cp === 0x26c5 ||
-    cp === 0x26ea || cp === 0x26f5
+    cp === 0x231a || cp === 0x231b
   ) {
     return 2;
   }
@@ -131,11 +139,21 @@ export function charWidth(cp: number): number {
 
 export function visibleWidth(s: string): number {
   const stripped = stripAnsi(s);
-  let w = 0;
+  const cps: number[] = [];
   for (const ch of stripped) {
     const cp = ch.codePointAt(0);
-    if (cp !== undefined) {
-      w += charWidth(cp);
+    if (cp !== undefined) cps.push(cp);
+  }
+  let w = 0;
+  for (let i = 0; i < cps.length; i++) {
+    const cp = cps[i];
+    const cw = charWidth(cp);
+    // If a 1-cell glyph is followed by VS16 (U+FE0F), terminal displays it as 2 columns
+    if (cw === 1 && i + 1 < cps.length && cps[i + 1] === 0xfe0f) {
+      w += 2;
+      i++; // skip VS16
+    } else {
+      w += cw;
     }
   }
   return w;
@@ -188,14 +206,22 @@ function wrapCellSegs(segs: Seg[], width: number): Seg[][] {
   };
   const appendWord = (cs: C[]): void => {
     for (const c of cs) appendChar(c.ch, c.seg);
-    used += cs.length;
+    used += visibleWidth(cs.map(c => c.ch).join(''));
   };
   const hardBreak = (cs: C[]): void => {
     let rest = cs;
     while (rest.length > 0) {
       if (used > 0) newline();
-      appendWord(rest.slice(0, w));
-      rest = rest.slice(w);
+      let takeCount = 0;
+      let takeW = 0;
+      while (takeCount < rest.length) {
+        const chW = visibleWidth(rest[takeCount].ch);
+        if (takeW + chW > w && takeCount > 0) break;
+        takeW += chW;
+        takeCount++;
+      }
+      appendWord(rest.slice(0, takeCount));
+      rest = rest.slice(takeCount);
     }
   };
   for (const tok of toks) {
@@ -204,7 +230,8 @@ function wrapCellSegs(segs: Seg[], width: number): Seg[][] {
       continue;
     }
     const cs = tok.word;
-    if (used === 0 ? cs.length <= w : used + 1 + cs.length <= w) {
+    const wordW = visibleWidth(cs.map(c => c.ch).join(''));
+    if (used === 0 ? wordW <= w : used + 1 + wordW <= w) {
       if (used > 0) {
         line.push({ text: ' ', sgr: null });
         used += 1;
@@ -212,7 +239,7 @@ function wrapCellSegs(segs: Seg[], width: number): Seg[][] {
       appendWord(cs);
     } else {
       if (line.length > 0) newline();
-      if (cs.length <= w) appendWord(cs);
+      if (wordW <= w) appendWord(cs);
       else hardBreak(cs);
     }
   }
@@ -1100,16 +1127,38 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
       if (cur.length) { physLines.push(cur); cur = []; curW = 0; }
     };
     const emitWord = (ent: { word: string; tok: WTok; oldCol: number }): void => {
-      let pos = 0;
-      while (pos < ent.word.length) {
+      const chars = Array.from(ent.word);
+      let idx = 0;
+      let charOldCol = ent.oldCol;
+      while (idx < chars.length) {
         if (curW >= width) {
           pushLine();
           startLineWithPrefix();
         }
-        const take = Math.min(width - curW, ent.word.length - pos);
-        cur.push({ text: ent.word.slice(pos, pos + take), tok: ent.tok, oldCol: ent.oldCol + pos, newCol: curW });
-        curW += take;
-        pos += take;
+        let chunk = '';
+        let chunkW = 0;
+        let startCharOldCol = charOldCol;
+        while (idx < chars.length) {
+          const ch = chars[idx];
+          const chW = visibleWidth(ch);
+          if (curW + chunkW + chW > width && (curW + chunkW > 0 || chunk.length > 0)) {
+            break;
+          }
+          chunk += ch;
+          chunkW += chW;
+          charOldCol += ch.length;
+          idx++;
+        }
+        if (chunk.length === 0 && idx < chars.length) {
+          // Single character wider than remaining line budget
+          const ch = chars[idx];
+          chunk = ch;
+          chunkW = visibleWidth(ch);
+          charOldCol += ch.length;
+          idx++;
+        }
+        cur.push({ text: chunk, tok: ent.tok, oldCol: startCharOldCol, newCol: curW });
+        curW += chunkW;
       }
     };
 
@@ -1120,7 +1169,9 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
       let sp = '';
       let spTok: WTok | null = null;
       if (e > 0) { sp = entries[e - 1].trail; spTok = entries[e - 1].trailTok; }
-      if (cur.length === prefixParts.length || curW + sp.length + ent.word.length > width) {
+      const entW = visibleWidth(ent.word);
+      const spW = visibleWidth(sp);
+      if (cur.length === prefixParts.length || curW + spW + entW > width) {
         if (cur.length > prefixParts.length) {
           pushLine();
           startLineWithPrefix();
@@ -1128,7 +1179,7 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
         emitWord(ent);
       } else {
         if (sp.length) cur.push({ text: sp, tok: spTok ?? ent.tok, oldCol: ent.oldCol - sp.length, newCol: curW });
-        curW += sp.length;
+        curW += spW;
         emitWord(ent);
       }
     }
