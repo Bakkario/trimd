@@ -10,7 +10,7 @@ import type { RenderedDoc } from '../src/core/types.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const note = join(here, 'fixtures', 'obsidian_note.md');
-const ctx = { root: join(here, 'fixtures', 'root'), width: 80, theme: DEFAULT_THEME, showFrontmatter: true };
+const ctx = { root: join(here, 'fixtures', 'root'), width: 80, theme: DEFAULT_THEME, showFrontmatter: true, metaExpanded: true };
 
 function visible(s: string): string {
   return s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\]]*\\/g, '');

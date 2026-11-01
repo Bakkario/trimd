@@ -69,7 +69,7 @@ test('frontmatter renders with metaLabel/metaKey/metaValue slots (ISSUE-009)', a
   const out = captureStdout();
   const stdin = fakeTty();
   const inst = render(
-    <App doc={doc} root={root} theme={META_THEME} themeId="meta-test" sidebarOpen={true} showHidden={false} showFrontmatter={true} />,
+    <App doc={doc} root={root} theme={META_THEME} themeId="meta-test" sidebarOpen={true} showHidden={false} showFrontmatter={true} metaExpanded={true} />,
     { stdout: out, stdin },
   );
   try {

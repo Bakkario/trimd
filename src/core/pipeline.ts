@@ -3,7 +3,7 @@ import type { Token } from 'markdown-it';
 import { basename, dirname } from 'node:path';
 import type { FrontmatterMeta, RenderedDoc, Theme } from './types.js';
 import { FileError, FileMissingError } from './types.js';
-import { extractFrontmatter, renderMeta } from './frontmatter.js';
+import { extractFrontmatter, renderMeta, renderMetaCompact } from './frontmatter.js';
 import { parseTokens } from './parse.js';
 import { renderTokens, wrapLines, type RenderCtx } from './renderer.js';
 import { buildIndex, makeResolver, type RootIndex } from './resolve.js';
@@ -16,6 +16,7 @@ export interface PipelineCtx {
   theme: Theme;
   showFrontmatter: boolean;
   showHidden?: boolean;
+  metaExpanded?: boolean; // Phase 3 (Task 7.4, ADR-027): false (default) = compact strip, true = full YAML
 }
 
 let indexRoot: string | null = null;
@@ -83,7 +84,9 @@ export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
   const outLines: typeof wrapped = [...wrapped];
   let metaLinesCount = 0;
   if (ctx.showFrontmatter && meta) {
-    const metaLines = renderMeta(meta, ctx.theme);
+    const metaLines = ctx.metaExpanded
+      ? renderMeta(meta, ctx.theme)
+      : renderMetaCompact(meta, ctx.theme, ctx.width);
     metaLinesCount = metaLines.length;
     outLines.unshift(...metaLines);
   }

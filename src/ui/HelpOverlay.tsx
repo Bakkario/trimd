@@ -14,6 +14,7 @@ const ROWS: Array<[string, string]> = [
   ['T', 'cycle theme'],
   ['/', 'find within document (doc focus)'],
   ['n N', 'next / previous search match'],
+  ['m', 'toggle frontmatter YAML / compact (doc focus)'],
   ['?', 'help (any key closes)'],
 ];
 

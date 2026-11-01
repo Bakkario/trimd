@@ -27,6 +27,7 @@ export interface AppProps {
   sidebarOpen: boolean;
   showHidden: boolean;
   showFrontmatter: boolean;
+  metaExpanded?: boolean;
 }
 
 export interface SearchState {
@@ -116,7 +117,16 @@ function StatusBar({
   );
 }
 
-export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden, showFrontmatter }: AppProps) {
+export default function App({
+  doc,
+  root,
+  theme,
+  themeId,
+  sidebarOpen,
+  showHidden,
+  showFrontmatter,
+  metaExpanded: initialMetaExpanded,
+}: AppProps) {
   const [state, setState] = useState<UiState>(() => ({
     stack: [{ abs: doc.source, doc, scrollTop: 0 }],
     cur: 0,
@@ -129,6 +139,7 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
     reloadTick: 0,
   }));
   const [search, setSearch] = useState<SearchState | null>(null);
+  const [metaExpanded, setMetaExpanded] = useState<boolean>(initialMetaExpanded ?? false);
   const cur = state.stack[state.cur];
 
   // 02 §11 / ADR-023 / ADR-026 — chrome layout: header row (row 0) + content rows +
@@ -147,13 +158,13 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
   }, [state.themeId]);
 
   const render = (abs: string) =>
-    renderFile(abs, { root, width, theme: themeObj, showFrontmatter, showHidden });
+    renderFile(abs, { root, width, theme: themeObj, showFrontmatter, showHidden, metaExpanded });
 
-  // 02 §11 — re-render the doc via renderFile on [abs, width, reloadTick, themeId]
-  // (INV-3.2: sidebar toggle re-wraps at the new width; INV-3.8: T re-themes).
+  // 02 §11 — re-render the doc via renderFile on [abs, width, reloadTick, themeId, metaExpanded]
+  // (INV-3.2: sidebar toggle re-wraps at the new width; INV-3.8: T re-themes; m toggles meta).
   const docMemo = useMemo(
-    () => renderFile(cur.abs, { root, width, theme: themeObj, showFrontmatter, showHidden }),
-    [cur.abs, width, state.reloadTick, state.themeId],
+    () => renderFile(cur.abs, { root, width, theme: themeObj, showFrontmatter, showHidden, metaExpanded }),
+    [cur.abs, width, state.reloadTick, state.themeId, metaExpanded],
   );
   const entries = useMemo(
     () => listEntries(state.cwd, showHidden),
@@ -413,6 +424,11 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
     if (input === 'T') { setState((st) => nextTheme(st, allThemeIds())); return; }
     // INV-3.7 — ? opens the help overlay.
     if (input === '?') { setState((st) => ({ ...st, help: true })); return; }
+    // Phase 3 (Task 7.4, ADR-027) — m toggles compact frontmatter / full YAML (doc focus).
+    if (input === 'm' && state.focus === 'doc') {
+      setMetaExpanded((v) => !v);
+      return;
+    }
 
     if (key.tab) {
       // INV-3.2 — Tab toggles the sidebar; opening focuses it, closing

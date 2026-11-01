@@ -104,8 +104,8 @@ test('golden: callout fixture — renders, INV-1.2 (code-aware), callout body pr
 test('golden: wiki fixture — renders, INV-1.2, #tag styled (ANSI), no "[["', () => {
   const { src, raw, stripped } = render('vault_wiki_note.md');
   assertInv12('wiki', src, stripped);
-  // frontmatter tags render as `#tag` painted with the theme `tag` color
-  assert.ok(/\x1b\[[0-9;]*m#(devops|local-inference|agent)/.test(raw), 'wiki: no ANSI-styled #tag found');
+  // frontmatter tags render as `#tag` painted with tag / tagChip color
+  assert.ok(/\x1b\[[0-9;]*m\s*#(devops|local-inference|agent)/.test(raw), 'wiki: no ANSI-styled #tag found');
   assert.ok(!stripped.includes('[['), 'wiki: raw "[[" survived');
 });
 
