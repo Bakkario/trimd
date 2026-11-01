@@ -11,7 +11,7 @@ import { openExternal, canOpen } from '../core/open.js';
 import { encodeOsc52, isSshSession } from '../core/clipboard.js';
 import type { DocState, Focus, UiState } from '../core/nav.js';
 import { findMatches, applySearch } from '../core/search.js';
-import { stripAnsi } from '../core/renderer.js';
+import { stripAnsi, visibleWidth } from '../core/renderer.js';
 import { collectVisibleLinks, applyLinkHints, resolveHintInput, type HintTarget } from '../core/link-hints.js';
 import DocPane from './DocPane.js';
 import Sidebar from './Sidebar.js';
@@ -42,6 +42,15 @@ export interface SearchState {
 // manually (Sidebar's `truncate()` pattern), not with ink `wrap="truncate"`.
 function fitLabel(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+function paintBarRow(content: string, totalCols: number, bgSgr: string): string {
+  const pad = Math.max(0, totalCols - visibleWidth(content));
+  const padded = content + ' '.repeat(pad);
+  if (!bgSgr) return padded;
+  // Replace inner resets (\x1b[0m) with reset + restore background
+  const withBg = padded.replace(/\x1b\[0m/g, '\x1b[0m\x1b[' + bgSgr + 'm');
+  return '\x1b[' + bgSgr + 'm' + withBg + '\x1b[0m';
 }
 
 // 02 §11 / D-3.2 (ADR-026) — StatusBar (full-width headerBg, 3 segments).
@@ -114,15 +123,23 @@ function StatusBar({
   const pctPainted = ' ' + paint(theme, 'dim', pctStr) + ' ';
   const themePainted = paint(theme, 'accentPill', themePill) + ' ';
 
+  const rightPainted = warnPainted + pctPainted + themePainted;
+
+  // Calculate spaces between left, center, right to fill columns exactly
+  const leftW = visibleWidth(leftPainted);
+  const centerW = visibleWidth(centerPainted);
+  const rightW = visibleWidth(rightPainted);
+  const totalContentW = leftW + centerW + rightW;
+  const remaining = Math.max(0, columns - totalContentW);
+  const gap1 = Math.floor(remaining / 2);
+  const gap2 = remaining - gap1;
+
+  const barContent = leftPainted + ' '.repeat(gap1) + centerPainted + ' '.repeat(gap2) + rightPainted;
+  const paintedRow = paintBarRow(barContent, columns, theme.colors.headerBg);
+
   return (
-    <Box flexDirection="row" justifyContent="space-between" width="100%">
-      <Text>{leftPainted}</Text>
-      <Text>{centerPainted}</Text>
-      <Box flexDirection="row">
-        {warnBadge !== '' && <Text>{warnPainted}</Text>}
-        <Text>{pctPainted}</Text>
-        <Text>{themePainted}</Text>
-      </Box>
+    <Box flexDirection="row" width={columns} height={1}>
+      <Text>{paintedRow}</Text>
     </Box>
   );
 }
@@ -781,7 +798,7 @@ export default function App({
   const fStr = canFwd ? 'F' : paint(themeObj, 'dim', 'F');
   const histStr = `< ${bStr}  ${fStr} >`;
 
-  const docPill = state.focus === 'doc'
+    const docPill = state.focus === 'doc'
     ? paint(themeObj, 'accentPill', ' DOC ') + ' '
     : '';
   const docTitle = fitLabel('¶ ' + path, Math.max(10, width - 25));
@@ -790,30 +807,35 @@ export default function App({
     : paint(themeObj, 'dim', docTitle);
   const docRightStat = paint(themeObj, 'dim', `${histStr}   ${readingStat}`);
 
+  const columns = stdout.columns || 80;
+  // Build full-width top chrome bar painted with headerBg
+  let topBarContent = '';
+  if (state.sidebarOpen) {
+    const sbPad = Math.max(0, 30 - visibleWidth(sidebarHeader));
+    const sbCell = sidebarHeader + ' '.repeat(sbPad);
+    const sepCell = paint(themeObj, 'dim', '│');
+    const docAvail = Math.max(10, columns - 31);
+    const leftW = visibleWidth(docTitleText);
+    const rightW = visibleWidth(docRightStat) + 2;
+    const gap = Math.max(1, docAvail - leftW - rightW);
+    const docCell = docTitleText + ' '.repeat(gap) + docRightStat + '  ';
+    topBarContent = sbCell + sepCell + docCell;
+  } else {
+    const leftW = visibleWidth(docTitleText);
+    const rightW = visibleWidth(docRightStat) + 2;
+    const gap = Math.max(1, columns - leftW - rightW);
+    topBarContent = docTitleText + ' '.repeat(gap) + docRightStat + '  ';
+  }
+  const paintedTopBar = paintBarRow(topBarContent, columns, themeObj.colors.headerBg);
+
   return (
     <Box flexDirection="column" width="100%" height={terminalRows}>
       {state.help
         ? <HelpOverlay rows={terminalRows - 1} width={width} />
         : (
           <>
-            <Box flexDirection="row" width="100%" height={1}>
-              {state.sidebarOpen ? (
-                <>
-                  <Box width={30}>
-                    <Text>{sidebarHeader}</Text>
-                  </Box>
-                  <Text>{paint(themeObj, 'dim', '│')}</Text>
-                  <Box flexGrow={1} flexDirection="row" justifyContent="space-between">
-                    <Text>{docTitleText}</Text>
-                    <Text>{docRightStat + '  '}</Text>
-                  </Box>
-                </>
-              ) : (
-                <Box flexGrow={1} flexDirection="row" justifyContent="space-between">
-                  <Text>{docTitleText}</Text>
-                  <Text>{docRightStat + '  '}</Text>
-                </Box>
-              )}
+            <Box flexDirection="row" width={columns} height={1}>
+              <Text>{paintedTopBar}</Text>
             </Box>
             {search?.rowOpen && (
               <Box flexDirection="row" width="100%" height={1}>

@@ -79,6 +79,9 @@ test('Task 6.3: Top chrome header has DOC / FILES accent pills and StatusBar has
     assert.ok(frame.includes('find'), 'search hint in status bar');
     assert.ok(frame.includes('%'), 'percentage rendered in status bar');
     assert.ok(frame.includes('default'), 'theme pill in status bar');
+
+    // ISSUE-022: full-width headerBg surface checks
+    assert.ok(raw.includes(`\x1b[${DEFAULT_THEME.colors.headerBg}m`), 'Row 0 and StatusBar are painted with theme.colors.headerBg');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
