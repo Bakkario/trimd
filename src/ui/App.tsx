@@ -194,6 +194,8 @@ export default function App({
     return applySearch(docMemo, matches, clampedIdx, themeObj);
   }, [docMemo, matches, search?.idx, themeObj]);
 
+  const totalDirs = useMemo(() => entries.filter((e) => e.isDir).length, [entries]);
+  const totalNotes = useMemo(() => entries.filter((e) => !e.isDir).length, [entries]);
   const total = activeDocMemo.lines.length;
   const maxTop = Math.max(0, total - contentRows);
   const scrollTop = Math.min(cur.scrollTop, maxTop);
@@ -756,7 +758,19 @@ export default function App({
               </Box>
             )}
             <Box flexDirection="row" height={contentRows}>
-              {state.sidebarOpen && <Sidebar entries={entries} cursor={state.cursor} width={30} showBack={state.cwd !== root} rows={contentRows} />}
+              {state.sidebarOpen && (
+                <Sidebar
+                  entries={entries}
+                  cursor={state.cursor}
+                  width={30}
+                  showBack={state.cwd !== root}
+                  rows={contentRows}
+                  activeAbs={cur.abs}
+                  totalDirs={totalDirs}
+                  totalNotes={totalNotes}
+                  theme={themeObj}
+                />
+              )}
               {state.sidebarOpen && (
                 <Box flexDirection="column" width={1} height={contentRows}>
                   {Array.from({ length: contentRows }, (_, i) => (

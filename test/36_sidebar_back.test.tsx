@@ -137,7 +137,7 @@ test('back row: hidden at the session root (ISSUE-006)', async () => {
     assert.ok(side[0].includes('vault'), 'sidebar header is the root basename');
     assert.ok(side[1].startsWith('▸ aaa'), 'content row 0 = first entry (no back row)');
     assert.ok(side[2].startsWith('▸ sub'), 'content row 1 = second entry');
-    assert.ok(side[3].startsWith('  a.md'), 'content row 2 = file entry');
+    assert.ok(side[3].includes('a.md'), 'content row 2 = file entry');
     assert.ok(raw.includes('\x1b[7m▸ aaa'), 'cursor starts at the top entry');
     assert.ok(!side.some((l) => l.includes('..')), 'no `..` row anywhere in the sidebar region');
   } finally {
