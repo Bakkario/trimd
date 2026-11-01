@@ -114,7 +114,7 @@ test('doc click outside a link moves focus to the doc (INV-3.6 am. ISSUE-003)', 
     h.stdin.push('\x1b[B'); // ↓ : must scroll the doc, not move the cursor
     await wait(300);
     const { raw, frame } = await finish(h);
-    assert.ok(frame.includes('L2 2/30'), 'doc scrolled (status bar L2 2/30) → doc has focus');
+    assert.ok(frame.includes('L2 2/31'), 'doc scrolled (status bar L2 2/31) → doc has focus');
     assert.ok(!raw.includes('\x1b[7m  a.md'), 'cursor did not move (sidebar not focused)');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
@@ -132,7 +132,7 @@ test('sidebar file click opens the entry and keeps sidebar focus (INV-3.6 am. IS
     const { raw, frame } = await finish(h);
     assert.ok(raw.includes('\x1b[7m  a.md'), 'cursor moved sub → a.md → sidebar has focus');
     assert.ok(frame.includes('b.md'), 'sidebar click opened b.md (breadcrumb)');
-    assert.ok(!frame.includes('L2 2/30'), 'doc (now b.md) did not scroll');
+    assert.ok(!frame.includes('L2 2/30') && !frame.includes('L2 2/31'), 'doc (now b.md) did not scroll');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
   }
@@ -146,7 +146,7 @@ test('sidebar dir click enters the dir and keeps sidebar focus (regression, INV-
     await wait(300);
     const { raw, frame } = await finish(h);
     assert.ok(raw.includes('\x1b[7m  z.md'), 'entered sub — cursor on z.md (sidebar focus)');
-    assert.ok(frame.includes('L1 1/30'), 'doc unchanged (a.md at top)');
+    assert.ok(frame.includes('L1 1/31'), 'doc unchanged (a.md at top)');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
   }

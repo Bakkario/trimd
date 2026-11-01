@@ -306,7 +306,7 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
 // Renders the single non-list block starting at ts[i] (paragraph_open, hr, fence,
 // blockquote_open, standalone inline, html_block, or default). Pushes its line(s)
 // into out and returns the index after the block.
-function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][]): number {
+function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], depth = 0): number {
   const t = ts[i];
   switch (t.type) {
     case 'paragraph_open': {
@@ -372,7 +372,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
         const m = kids.findIndex((c) => c.type === 'softbreak' || c.type === 'hardbreak');
         const firstBody: Seg[][] = m >= 0 ? splitAtBr(renderInline(rctx, kids.slice(m + 1), [])) : [];
         const inner: Seg[][] = [];
-        walk(ts, i + 4, j - 1, rctx, inner, 0);
+        walk(ts, i + 4, j - 1, rctx, inner, 0, depth + 1);
         inner.unshift(...firstBody);
         if (co.title !== null) inner.unshift(titleSegs);
         else if (inner.length === 0) inner.push([]);
@@ -384,7 +384,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
         }
       } else {
         const inner: Seg[][] = [];
-        walk(ts, i + 1, j - 1, rctx, inner, 0);
+        walk(ts, i + 1, j - 1, rctx, inner, 0, depth + 1);
         for (const l of inner) out.push([{ text: '│ ', sgr: rctx.theme.colors.quote || null }, ...l]);
       }
       return j;
@@ -483,20 +483,39 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
   }
 }
 
-function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], listLevel: number): void {
+function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], listLevel: number, depth = 0): void {
   while (i < end) {
     const t = ts[i];
+    const blockSegs: Seg[][] = [];
+    let nextI = i;
+
     switch (t.type) {
       case 'heading_open': {
         const level = t.markup.length;
         const inline = ts[i + 1];
         const hs = headingSgr(rctx.theme, level);
         const base = hs !== null ? [hs] : [];
-        out.push(renderInline(rctx, inline.children ?? [], base));
+        const rendered = renderInline(rctx, inline.children ?? [], base);
+        if (level === 1) {
+          // D-3.3: H1 = bold heading1 text line, immediately followed (no blank line)
+          // by an underline of '━'.repeat(Math.min(visibleWidth(h1), 45)) in hr color.
+          blockSegs.push(rendered);
+          const h1Len = segsVisible(rendered);
+          const barLen = Math.min(Math.max(1, h1Len), 45);
+          blockSegs.push([{ text: '━'.repeat(barLen), sgr: rctx.theme.colors.hr || null }]);
+        } else if (level === 2) {
+          // D-3.3: H2 = prefixed with '▌ ' in heading2 color
+          blockSegs.push([
+            { text: '▌ ', sgr: rctx.theme.colors.heading2 || null },
+            ...rendered,
+          ]);
+        } else {
+          blockSegs.push(rendered);
+        }
         // advance past heading_close
         let j = i + 2;
         while (j < end && ts[j].type !== 'heading_close') j++;
-        i = j + 1;
+        nextI = j + 1;
         break;
       }
       case 'bullet_list_open':
@@ -509,14 +528,23 @@ function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][]
           else if (ts[j].type === closeType) depth--;
           j++;
         }
-        walkList(ts, i + 1, j, rctx, out, listLevel + 1, t.type === 'bullet_list_open' ? 'bullet' : 'ordered');
-        i = j + 1;
+        walkList(ts, i + 1, j - 1, rctx, blockSegs, listLevel + 1, t.type === 'bullet_list_open' ? 'bullet' : 'ordered');
+        nextI = j;
         break;
       }
       default:
-        i = renderOneBlock(ts, i, end, rctx, out);
+        nextI = renderOneBlock(ts, i, end, rctx, blockSegs, depth);
         break;
     }
+
+    if (blockSegs.length > 0) {
+      // D-3.3: Inter-block vertical rhythm: emit exactly 1 blank line between adjacent top-level blocks
+      if (listLevel === 0 && depth === 0 && out.length > 0) {
+        out.push([]);
+      }
+      out.push(...blockSegs);
+    }
+    i = nextI;
   }
 }
 

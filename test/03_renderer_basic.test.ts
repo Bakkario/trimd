@@ -11,14 +11,16 @@ function render(src: string): RenderedLine[] { return renderTokens(parseTokens(s
 function strip(s: string): string { return s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\\]*\\/g, ''); }
 function single(src: string): string { const ls = render(src); assert.equal(ls.length, 1); return ls[0].text; }
 
-test('INV-1.1: heading level 1 — no "#", bold+heading1 color', () => {
-  const t = single('# Hello World');
-  assert.equal(t, '\x1b[1;' + C.heading1 + 'mHello World\x1b[0m');
-  assert.ok(!t.includes('#'));
+test('INV-1.1: heading level 1 — no "#", bold+heading1 color + underline', () => {
+  const ls = render('# Hello World');
+  assert.equal(ls.length, 2);
+  assert.equal(ls[0].text, '\x1b[1;' + C.heading1 + 'mHello World\x1b[0m');
+  assert.ok(ls[1].text.includes('━'));
+  assert.ok(!ls[0].text.includes('#'));
 });
 
 test('headings 2–6 use heading2..heading4, heading5 (H6 reuses heading5)', () => {
-  assert.equal(single('## A'), '\x1b[' + C.heading2 + 'mA\x1b[0m');
+  assert.equal(single('## A'), '\x1b[' + C.heading2 + 'm▌ \x1b[0m\x1b[' + C.heading2 + 'mA\x1b[0m');
   assert.equal(single('### B'), '\x1b[' + C.heading3 + 'mB\x1b[0m');
   assert.equal(single('#### C'), '\x1b[' + C.heading4 + 'mC\x1b[0m');
   assert.equal(single('##### D'), '\x1b[' + C.heading5 + 'mD\x1b[0m');
@@ -42,7 +44,7 @@ test('nested emphasis flattens with reset at each boundary', () => {
 test('inline tokens inside headings nest SGR', () => {
   assert.equal(
     single('## Hi **there**'),
-    '\x1b[' + C.heading2 + 'mHi \x1b[0m\x1b[' + C.heading2 + ';1;' + C.bold + 'mthere\x1b[0m',
+    '\x1b[' + C.heading2 + 'm▌ \x1b[0m\x1b[' + C.heading2 + 'mHi \x1b[0m\x1b[' + C.heading2 + ';1;' + C.bold + 'mthere\x1b[0m',
   );
 });
 

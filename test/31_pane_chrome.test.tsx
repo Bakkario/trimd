@@ -78,12 +78,19 @@ function setup(sidebarOpen: boolean): { inst: ReturnType<typeof render>; out: Wr
   // Source blank lines below are source-only (the renderer skips them); they
   // keep markdown-it from merging the link paragraph into the surrounding
   // lists → rendered count = 22 + 1 + 7 = 30 lines.
+  // lists → with Phase 3 Task 7.1 inter-block vertical rhythm (1 blank line between top-level blocks),
+  // 20 items + 1 blank + 1 link + 1 blank + 7 items = exactly 30 lines.
+  // The link is at abs line 21 (0-based 21), which is visible on line 21 within the 22 rows [0..21].
+  // Wait, the status-row test wants the link to be off-screen at abs line 22!
+  // At 22 content rows (lines 0..21 visible), abs line 22 is off-screen.
+  // So: 21 items + 1 blank = 22 lines. Link is at line 22!
+  // Then 1 blank + 6 items = 22 + 1 + 1 + 6 = 30 lines total!
   const aLines = [
-    ...Array.from({ length: 22 }, (_, i) => `${i + 1}. item${i + 1}`),
+    ...Array.from({ length: 21 }, (_, i) => `${i + 1}. item${i + 1}`),
     '',
     '[alpha](b.md)',
     '',
-    ...Array.from({ length: 7 }, (_, i) => `${i + 23}. item${i + 23}`),
+    ...Array.from({ length: 6 }, (_, i) => `${i + 22}. item${i + 22}`),
   ];
   writeFileSync(join(root, 'a.md'), aLines.join('\n') + '\n');
   const list = Array.from({ length: 30 }, (_, i) => `${i + 1}. item${i + 1}`).join('\n') + '\n';

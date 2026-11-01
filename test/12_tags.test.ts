@@ -25,7 +25,7 @@ test('See #topic/sub and #x_y. — both chips colored, surrounding text untouche
 
 test('# Heading is not tagged (block rule consumes it)', () => {
   const ls = render('# Heading');
-  assert.equal(ls.length, 1);
+  assert.equal(ls.length, 2);
   const v = ls[0].text.replace(/\x1b\[[0-9;]*m/g, '');
   assert.equal(v, 'Heading');
   assert.ok(!ls[0].text.includes('\x1b[38;5;208m'));
