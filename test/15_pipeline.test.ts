@@ -51,12 +51,12 @@ test('fixture content actually rendered: meta header, callout, embed, ⚠, tag, 
   assert.ok(vs.includes('title: Fixture Note'));
   assert.ok(vs.some((l) => l.includes('#alpha') && l.includes('#beta/gamma')));
   assert.ok(vs.some((l) => l.includes('WARNING — Watch out')));
-  assert.ok(vs.includes('│   body line'));
+  assert.ok(vs.includes('┃   body line'));
   assert.ok(vs.includes('▸ note: Present'));
   assert.ok(vs.some((l) => l.includes('⚠')));
   assert.ok(vs.some((l) => l.includes('#alpha')));
-  assert.ok(vs.includes('A   B') || vs.some((l) => /^A\s+B$/.test(l)));
-  assert.ok(vs.includes('1   2') || vs.some((l) => /^1\s+2$/.test(l)));
+  assert.ok(vs.some((l) => l.includes('│ A │ B │')));
+  assert.ok(vs.some((l) => l.includes('│ 1 │ 2 │')));
   assert.ok(vs.some((l) => l.startsWith('── js')));
 });
 

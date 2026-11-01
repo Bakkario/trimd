@@ -29,8 +29,8 @@ test('ISSUE-016: callout body wrap carries border and 2-space indent on all phys
     const raw = lines[i].text;
     const plain = stripAnsi(raw);
     assert.ok(visibleWidth(raw) <= 40, `line ${i} exceeds width: ${visibleWidth(raw)}`);
-    assert.ok(raw.startsWith(`\x1b[${C.calloutWarning}m│ \x1b[0m`), `line ${i} missing border SGR`);
-    assert.ok(plain.startsWith('│   '), `line ${i} missing "│   " prefix: ${JSON.stringify(plain)}`);
+    assert.ok(raw.startsWith(`\x1b[${C.calloutWarning}m┃ \x1b[0m`), `line ${i} missing border SGR`);
+    assert.ok(plain.startsWith('┃   '), `line ${i} missing "┃   " prefix: ${JSON.stringify(plain)}`);
   }
 });
 

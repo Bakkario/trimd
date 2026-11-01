@@ -34,7 +34,7 @@ test('> [!WARNING] Fix this: border in calloutWarning, title bold WARNING — Fi
   assert.equal(ls.length, 1);
   assert.equal(
     ls[0].text,
-    border(C.calloutWarning, '│ ') + bold_border(C.calloutWarning, 'WARNING') + ' — ' + bold('Fix this'),
+    border(C.calloutWarning, '┃ ') + bold_border(C.calloutWarning, '! WARNING') + ' — ' + bold('Fix this'),
   );
 });
 
@@ -43,25 +43,25 @@ function bold_border(sgr: string, s: string): string { return '\x1b[1;' + sgr + 
 test('unknown type → calloutNote border', () => {
   const ls = render('> [!ROCKET] hello');
   assert.equal(ls.length, 1);
-  assert.equal(ls[0].text, border(C.calloutNote, '│ ') + bold_border(C.calloutNote, 'ROCKET') + ' — ' + bold('hello'));
+  assert.equal(ls[0].text, border(C.calloutNote, '┃ ') + bold_border(C.calloutNote, 'ROCKET') + ' — ' + bold('hello'));
 });
 
-test('callout body lines prefixed │   (border + 2-space indent)', () => {
+test('callout body lines prefixed ┃   (border + 2-space indent)', () => {
   const ls = render('> [!NOTE] Title\n> body one\n>\n> body two');
   assert.equal(ls.length, 3);
-  assert.equal(ls[0].text, border(C.calloutNote, '│ ') + bold_border(C.calloutNote, 'NOTE') + ' — ' + bold('Title'));
-  assert.equal(ls[1].text, border(C.calloutNote, '│ ') + '  body one');
-  assert.equal(ls[2].text, border(C.calloutNote, '│ ') + '  body two');
+  assert.equal(ls[0].text, border(C.calloutNote, '┃ ') + bold_border(C.calloutNote, '¶ NOTE') + ' — ' + bold('Title'));
+  assert.equal(ls[1].text, border(C.calloutNote, '┃ ') + '  body one');
+  assert.equal(ls[2].text, border(C.calloutNote, '┃ ') + '  body two');
   for (const l of ls.slice(1)) {
     const v = l.text.replace(/\x1b\[[0-9;]*m/g, '');
-    assert.ok(v.startsWith('│   '), 'missing │   prefix: ' + JSON.stringify(v));
+    assert.ok(v.startsWith('┃   '), 'missing ┃   prefix: ' + JSON.stringify(v));
   }
 });
 
 test('no title: marker line dropped, body still indented', () => {
   const ls = render('> [!NOTE]\n> only body');
   assert.equal(ls.length, 1);
-  assert.equal(ls[0].text, border(C.calloutNote, '│ ') + '  only body');
+  assert.equal(ls[0].text, border(C.calloutNote, '┃ ') + '  only body');
 });
 
 test('non-callout blockquote unchanged (INV-1.6)', () => {

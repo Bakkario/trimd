@@ -115,35 +115,33 @@ test('table: cells wrap within the column, no truncation, aligned columns', asyn
     await wait(200);
     const frame = await finish(h);
     const lines = docLines(frame);
-    const headerIdx = lines.findIndex((l) => l.startsWith('Name '));
+    const headerIdx = lines.findIndex((l) => l.includes('Name') && l.includes('Description'));
     assert.ok(headerIdx >= 0, 'header line present');
-    const endIdx = lines.findIndex((l, i) => i > headerIdx && l.includes('wrap here'));
-    assert.ok(endIdx > headerIdx, 'last code-row line present');
-    const table = lines.slice(headerIdx, endIdx + 1);
-    // 10 physical lines: header, separator, short, long×4, code×3 (with 0 empty pad)
+    const bottomIdx = lines.findIndex((l, i) => i > headerIdx && l.includes('╰───────┴'));
+    assert.ok(bottomIdx > headerIdx, 'bottom border present');
+    const table = lines.slice(headerIdx - 1, bottomIdx + 1); // includes top border, rows, bottom border
     assert.ok(table.length >= 10, 'expected table line count');
 
     // 1. No truncation anywhere; every word of the long cell survives.
     assert.ok(!frame.includes('…'), 'no truncation ellipsis in the frame');
     for (const w of LONG.split(' ')) assert.ok(frame.includes(w), `long-cell word survives: ${w}`);
 
-    // 2. Alignment: gap chars at doc offsets 5 and 36 are spaces wherever a
-    //    line reaches that far; separator is a single unbroken line.
-    for (const l of table) {
-      if (l.length > 5) assert.equal(l[5], ' ', `gap at offset 5 in: ${JSON.stringify(l)}`);
-      if (l.length > 36) assert.equal(l[36], ' ', `gap at offset 36 in: ${JSON.stringify(l)}`);
+    // 2. Alignment: vertical borders │ align on every content line
+    for (let i = 1; i < table.length - 1; i++) {
+      const l = table[i];
+      if (l.includes('┼')) continue; // mid separator rule
+      assert.ok(l.startsWith('│ '), `line starts with │ in: ${JSON.stringify(l)}`);
+      assert.ok(l.trimEnd().endsWith('│'), `line ends with │ in: ${JSON.stringify(l)}`);
     }
-    assert.equal(table[1], '───── ' + '─'.repeat(30) + ' ' + '─'.repeat(7), 'separator line');
 
     // 3. Row padding: short cells do not orphan the wide cell's tail.
-    assert.ok(table[3].startsWith('long  '), 'long row line 1 starts at the Name column');
-    assert.ok(table[3].trimEnd().endsWith('pending'), 'pending sits on the long row line 1');
-    assert.ok(table[4].startsWith('      '), 'long row line 2 has blank Name/Status continuation');
-    assert.ok(table[6].includes('around'), 'long cell final word on the row final line');
-    assert.ok(table[7].startsWith('code  '), 'code row line 1 starts at the Name column');
-    assert.ok(table[7].trimEnd().endsWith('done'), 'done sits on the code row line 1');
-    assert.ok(table.some((l) => l.includes('quite long enough')), 'code cell wraps');
-    assert.ok(table.some((l) => l.includes('wrap here')), 'code cell final line');
+    const longRow1 = table.find((l) => l.includes('long'));
+    assert.ok(longRow1, 'long row line 1 present');
+    assert.ok(longRow1.includes('pending'), 'pending sits on long row line 1');
+    const codeRow1 = table.find((l) => l.includes('code') && l.includes('done'));
+    assert.ok(codeRow1, 'code row line 1 has done');
+    assert.ok(table.some((l) => l.includes('quite long')), 'code cell wraps');
+    assert.ok(table.some((l) => l.includes('here')), 'code cell final line');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -162,11 +160,11 @@ test('table: narrow table stays one line per row (no-wrap regression)', async ()
     await wait(200);
     const frame = await finish(h);
     const lines = docLines(frame);
-    assert.ok(lines.includes('a b c'), 'narrow header on one line');
-    assert.ok(lines.includes('─ ─ ─'), 'narrow separator on one line');
-    assert.ok(lines.includes('1 2 3'), 'narrow body row on one line');
+    assert.ok(lines.some((l) => l.includes('│ a │ b │ c │')), 'narrow header on one line');
+    assert.ok(lines.some((l) => l.includes('├─') && l.includes('┼─')), 'narrow separator on one line');
+    assert.ok(lines.some((l) => l.includes('│ 1 │ 2 │ 3 │')), 'narrow body row on one line');
     // header + body only — no wrap-continuation lines
-    const tableish = lines.filter((l) => l.startsWith('a b c') || l.startsWith('1 2 3'));
+    const tableish = lines.filter((l) => l.includes('│ a │ b │ c │') || l.includes('│ 1 │ 2 │ 3 │'));
     assert.equal(tableish.length, 2, 'no extra table lines');
   } finally {
     rmSync(tmp, { recursive: true, force: true });

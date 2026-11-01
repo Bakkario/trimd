@@ -30,6 +30,17 @@ const CO_KEYS: Record<string, keyof ThemeColors> = {
   DANGER: 'calloutDanger',
 };
 
+// D-3.3: Callout type icons/markers
+const CO_ICONS: Record<string, string> = {
+  NOTE: '¶ NOTE',
+  TIP: '* TIP',
+  INFO: 'i INFO',
+  SUCCESS: '✔ SUCCESS',
+  QUESTION: '? QUESTION',
+  WARNING: '! WARNING',
+  DANGER: '× DANGER',
+};
+
 function join(stack: string[]): string | null {
   return stack.length ? stack.join(';') : null;
 }
@@ -357,17 +368,22 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
           ? parseCallout((ts[i + 2].content ?? '').split('\n')[0])
           : null;
       if (co !== null) {
-        // INV-2.4 — border in type color; first paragraph's first line is the
-        // marker (dropped); its remaining children become the first body line(s)
+        // D-3.3 / INV-2.4 — '┃ ' border in type color, icon/marker (! WARNING, i INFO, etc.)
+        // body wrapped to docWidth - 4 with '┃   ' on every line, and full-width calloutBg.
         const key: keyof ThemeColors = CO_KEYS[co.type] ?? 'calloutNote';
         const border = rctx.theme.colors[key] || null;
         const boldBorder = border ? '1;' + border : '1';
+        const iconMarker = CO_ICONS[co.type] ?? co.type;
         const titleSegs: Seg[] = [
-          { text: '│ ', sgr: border },
-          { text: co.type, sgr: boldBorder },
-          { text: ' — ', sgr: null },
-          { text: co.title ?? '', sgr: emphSgr(rctx.theme, 'bold') },
+          { text: '┃ ', sgr: border },
+          { text: iconMarker, sgr: boldBorder },
         ];
+        if (co.title !== null && co.title.length > 0) {
+          titleSegs.push(
+            { text: ' — ', sgr: null },
+            { text: co.title, sgr: emphSgr(rctx.theme, 'bold') },
+          );
+        }
         const kids = ts[i + 2].children ?? [];
         const m = kids.findIndex((c) => c.type === 'softbreak' || c.type === 'hardbreak');
         const firstBody: Seg[][] = m >= 0 ? splitAtBr(renderInline(rctx, kids.slice(m + 1), [])) : [];
@@ -378,7 +394,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
         else if (inner.length === 0) inner.push([]);
         for (let k = 0; k < inner.length; k++) {
           if (co.title === null || k > 0) {
-            inner[k] = [{ text: '│ ', sgr: border }, { text: '  ', sgr: null }, ...inner[k]];
+            inner[k] = [{ text: '┃ ', sgr: border }, { text: '  ', sgr: null }, ...inner[k]];
           }
           out.push(inner[k]);
         }
@@ -390,10 +406,12 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       return j;
     }
     case 'table_open': {
-      // 02 §8 / INV-1.5 — bold tableHead header, tableBorder ─ separator,
-      // columns sized to the pane (shrink widest until Σw + gaps ≤ width,
-      // floor 4), cells wrap within their column, 1-space padding, no pipes
+      // D-3.3 / INV-1.5 / ADR-027 — Rounded Unicode box borders
+      // (╭─┬─╮, │ cell │, ├─┼─┤, ╰─┴─╯) in tableBorder.
+      // Columns sized so Σ widths + 3 * cols + 1 <= width (1-space cell padding on both sides of │).
+      // Header row bold tableHead.
       const headSgr = rctx.theme.colors.tableHead ? '1;' + rctx.theme.colors.tableHead : '1';
+      const bdrSgr = rctx.theme.colors.tableBorder || null;
       const rows: { header: boolean; cells: Seg[][] }[] = [];
       let j = i + 1;
       let cells: Seg[][] = [];
@@ -427,9 +445,10 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
         }
       }
       // Fit the table to the pane: shrink the widest columns (floor 4)
-      // until Σ widths + (cols − 1) inter-column gaps ≤ rctx.width.
+      // until Σ widths + 3 * cols + 1 <= rctx.width.
       const MIN_W = 4;
-      let total = widths.reduce((a, w) => a + w, 0) + Math.max(0, cols - 1);
+      const tableOverhead = 3 * cols + 1;
+      let total = widths.reduce((a, w) => a + w, 0) + tableOverhead;
       while (total > rctx.width) {
         let mi = -1;
         for (let c = 0; c < cols; c++) {
@@ -442,26 +461,42 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       const wrapped = rows.map((r) =>
         r.cells.map((cell, c) => wrapCellSegs(cell, c < cols ? widths[c] : 0)),
       );
+
+      // Top border: ╭─...─┬─...─╮ (or ╭─...─╮ for 1 col)
+      if (cols > 0) {
+        const topParts = widths.map((w) => '─'.repeat(w + 2));
+        out.push([{ text: '╭' + topParts.join('┬') + '╮', sgr: bdrSgr }]);
+      }
+
       for (let ri = 0; ri < rows.length; ri++) {
         const r = rows[ri];
         const h = Math.max(1, ...wrapped[ri].map((cl) => cl.length));
         for (let k = 0; k < h; k++) {
           const line: Seg[] = [];
           for (let c = 0; c < cols; c++) {
-            if (c > 0) line.push({ text: ' ', sgr: null });
+            line.push({ text: '│ ', sgr: bdrSgr });
             const cellSegs = wrapped[ri][c] ? (wrapped[ri][c][k] ?? []) : [];
             line.push(...cellSegs);
-            if (c < cols - 1) {
-              const pad = widths[c] - segsVisible(cellSegs);
-              if (pad > 0) line.push({ text: ' '.repeat(pad), sgr: null });
-            }
+            const pad = widths[c] - segsVisible(cellSegs);
+            if (pad > 0) line.push({ text: ' '.repeat(pad), sgr: null });
+            line.push({ text: ' ', sgr: null });
           }
+          line.push({ text: '│', sgr: bdrSgr });
           out.push(line);
         }
         if (r.header) {
-          out.push([{ text: widths.map((w) => '─'.repeat(w)).join(' '), sgr: rctx.theme.colors.tableBorder || null }]);
+          // Mid header separator: ├─...─┼─...─┤
+          const midParts = widths.map((w) => '─'.repeat(w + 2));
+          out.push([{ text: '├' + midParts.join('┼') + '┤', sgr: bdrSgr }]);
         }
       }
+
+      // Bottom border: ╰─...─┴─...─╯
+      if (cols > 0) {
+        const botParts = widths.map((w) => '─'.repeat(w + 2));
+        out.push([{ text: '╰' + botParts.join('┴') + '╯', sgr: bdrSgr }]);
+      }
+
       return j + 1;
     }
     case 'inline': {
@@ -854,15 +889,15 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
     const spanAt = (col: number): LinkSpan | undefined =>
       line.links.find((s) => s.startCol <= col && col < s.endCol);
 
-    // ISSUE-016: Check for blockquote/callout prefix (sequence of '│ ' optionally followed by '  ')
+    // ISSUE-016 / D-3.3: Check for blockquote/callout prefix (sequence of '│ ' or '┃ ' optionally followed by '  ')
     interface PrefixPart { tok: WTok; text: string; oldCol: number; }
     const prefixParts: PrefixPart[] = [];
     let tokIdx = 0;
     let scanCol = 0;
     while (tokIdx < toks.length) {
       const tok = toks[tokIdx];
-      if (tok.text === '│ ') {
-        prefixParts.push({ tok, text: '│ ', oldCol: scanCol });
+      if (tok.text === '│ ' || tok.text === '┃ ') {
+        prefixParts.push({ tok, text: tok.text, oldCol: scanCol });
         scanCol += 2;
         tokIdx++;
       } else {
