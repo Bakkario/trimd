@@ -10,6 +10,7 @@ import { MOUSE_ENABLE, MOUSE_DISABLE, createMouseParser } from '../core/mouse.js
 import { openExternal } from '../core/open.js';
 import type { DocState, Focus, UiState } from '../core/nav.js';
 import { findMatches, applySearch } from '../core/search.js';
+import { stripAnsi } from '../core/renderer.js';
 import DocPane from './DocPane.js';
 import Sidebar from './Sidebar.js';
 import HelpOverlay from './HelpOverlay.js';
@@ -40,32 +41,76 @@ function fitLabel(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
-// 02 §11 — StatusBar (inlined here until the layout grows; props per
-// contract). R-3 (ISSUE-012): between the center and the right group, a dim
-// contextual key hint for the focused pane; omitted while warnings are
-// present (they take precedence for the space).
-function StatusBar({ theme, path, line, total, themeId, warnings, focus }: {
+// 02 §11 / D-3.2 (ADR-026) — StatusBar (full-width headerBg, 3 segments).
+// Left: search indicator or L<line> <line>/<total>.
+// Center: contextual key hints (never disappear when warnings non-empty).
+// Right: compact warning badge ( ⚠ <N> ) + scroll percentage + theme pill.
+function StatusBar({
+  theme,
+  path,
+  line,
+  total,
+  scrollTop,
+  contentRows,
+  themeId,
+  warnings,
+  focus,
+  search,
+  searchMatches,
+  columns,
+}: {
   theme: Theme;
   path: string;
   line: number;
   total: number;
+  scrollTop: number;
+  contentRows: number;
   themeId: string;
   warnings: string[];
   focus: Focus;
+  search: SearchState | null;
+  searchMatches: number;
+  columns: number;
 }) {
-  const hint = warnings.length === 0
-    ? (focus === 'doc' ? '↑↓ scroll · g/G · ?' : '↑↓ move · ⏎ open · ?')
-    : null;
+  let leftText = `L${line} ${line}/${total}`;
+  if (search && search.query) {
+    leftText = `/ ${search.query} ${searchMatches > 0 ? search.idx + 1 : 0}/${searchMatches}`;
+  }
+
+  // Key hints
+  let centerText = '';
+  if (focus === 'sidebar') {
+    centerText = '↑↓ move · ⏎ open · ←/→ pane · ?';
+  } else {
+    centerText = columns >= 95
+      ? '↑↓ scroll · / find · l links · o outline · y copy · ?'
+      : '↑↓ · / · l · o · y · ?';
+  }
+
+  // Right group: warning badge, scroll %, theme pill
+  const scrollPct = total > 0
+    ? Math.max(0, Math.min(100, Math.round(((scrollTop + contentRows) / total) * 100)))
+    : 100;
+  const pctStr = `${scrollPct}%`;
+
+  const warnBadge = warnings.length > 0 ? ` ⚠ ${warnings.length} ` : '';
+  const themePill = ` ${themeId} `;
+
+  // Line is rendered across headerBg
+  const leftPainted = ' ' + paint(theme, 'dim', leftText) + ' ';
+  const centerPainted = paint(theme, 'dim', centerText);
+  const warnPainted = warnBadge ? paint(theme, 'statusWarn', warnBadge) : '';
+  const pctPainted = ' ' + paint(theme, 'dim', pctStr) + ' ';
+  const themePainted = paint(theme, 'accentPill', themePill) + ' ';
+
   return (
     <Box flexDirection="row" justifyContent="space-between" width="100%">
-      <Text>{path}</Text>
-      <Text>L{line} {line}/{total}</Text>
-      {hint !== null && <Text>{paint(theme, 'dim', hint)}</Text>}
+      <Text>{leftPainted}</Text>
+      <Text>{centerPainted}</Text>
       <Box flexDirection="row">
-        <Text>{themeId}</Text>
-        {warnings.length > 0
-          ? <Text>{paint(theme, 'statusWarn', ' ⚠ ' + warnings.join(', '))}</Text>
-          : <Text>{paint(theme, 'statusOk', '')}</Text>}
+        {warnBadge !== '' && <Text>{warnPainted}</Text>}
+        <Text>{pctPainted}</Text>
+        <Text>{themePainted}</Text>
       </Box>
     </Box>
   );
@@ -441,22 +486,44 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
   const path = relative(root, cur.abs);
   const line = scrollTop + 1;
 
-  // ADR-023 (ISSUE-010) — pane headers: sidebar header = the sidebar cwd
-  // (basename(root) at root, else root-relative), truncated to 28 chars; doc
-  // header = `¶ <root-relative doc path>` (same string as the status bar),
-  // truncated to the doc width.
-  const sidebarHeader = fitLabel(state.cwd === root ? basename(root) : relative(root, state.cwd), 28);
-  const docHeader = fitLabel('¶ ' + path, width);
+  // ADR-023 (ISSUE-010) / D-3.2 (ADR-026) — pane headers:
+  // Row 0 across headerBg.
+  // Sidebar: ` FILES ` in accentPill when focused else dim ` ▾ <cwd>`.
+  // Doc: ` DOC ` in accentPill when focused + ` ¶ <path>` + < B  F > + reading stat.
+  const cwdName = fitLabel(state.cwd === root ? basename(root) : relative(root, state.cwd), 22);
+  const sidebarHeader = state.focus === 'sidebar'
+    ? paint(themeObj, 'accentPill', ' FILES ') + ' ' + cwdName
+    : paint(themeObj, 'dim', ' ▾ ' + cwdName);
 
-  // R-2 (ISSUE-011) — focus indicator on the pane headers: the focused
-  // pane's header is bright (no dim SGR), the inactive pane's header is dim.
-  // The separator column stays dim in all states.
-  const sidebarHeaderText = state.focus === 'sidebar'
-    ? sidebarHeader
-    : paint(themeObj, 'dim', sidebarHeader);
-  const docHeaderText = state.focus === 'doc'
-    ? docHeader
-    : paint(themeObj, 'dim', docHeader);
+  // Doc stats: reading time (~200 wpm)
+  const wordCount = useMemo(() => {
+    let words = 0;
+    for (const l of docMemo.lines) {
+      const stripped = stripAnsi(l.text).trim();
+      if (stripped.length > 0) {
+        words += stripped.split(/\s+/).length;
+      }
+    }
+    return words;
+  }, [docMemo]);
+  const readingMin = Math.max(1, Math.ceil(wordCount / 200));
+  const readingStat = `${readingMin} min · ${wordCount}w`;
+
+  // History state: < B  F >
+  const canBack = state.cur > 0;
+  const canFwd = state.cur < state.stack.length - 1;
+  const bStr = canBack ? 'B' : paint(themeObj, 'dim', 'B');
+  const fStr = canFwd ? 'F' : paint(themeObj, 'dim', 'F');
+  const histStr = `< ${bStr}  ${fStr} >`;
+
+  const docPill = state.focus === 'doc'
+    ? paint(themeObj, 'accentPill', ' DOC ') + ' '
+    : '';
+  const docTitle = fitLabel('¶ ' + path, Math.max(10, width - 25));
+  const docTitleText = state.focus === 'doc'
+    ? docPill + docTitle
+    : paint(themeObj, 'dim', docTitle);
+  const docRightStat = paint(themeObj, 'dim', `${histStr}   ${readingStat}`);
 
   return (
     <Box flexDirection="column" width="100%" height={terminalRows}>
@@ -468,15 +535,19 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
               {state.sidebarOpen ? (
                 <>
                   <Box width={30}>
-                    <Text>{sidebarHeaderText}</Text>
+                    <Text>{sidebarHeader}</Text>
                   </Box>
                   <Text>{paint(themeObj, 'dim', '│')}</Text>
-                  <Box flexGrow={1}>
-                    <Text>{docHeaderText}</Text>
+                  <Box flexGrow={1} flexDirection="row" justifyContent="space-between">
+                    <Text>{docTitleText}</Text>
+                    <Text>{docRightStat + '  '}</Text>
                   </Box>
                 </>
               ) : (
-                <Text>{docHeaderText}</Text>
+                <Box flexGrow={1} flexDirection="row" justifyContent="space-between">
+                  <Text>{docTitleText}</Text>
+                  <Text>{docRightStat + '  '}</Text>
+                </Box>
               )}
             </Box>
             {search?.rowOpen && (
@@ -522,6 +593,8 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
         path={path}
         line={line}
         total={total}
+        scrollTop={scrollTop}
+        contentRows={contentRows}
         themeId={state.themeId}
         warnings={
           search && search.query && matches.length === 0
@@ -529,6 +602,9 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
             : docMemo.warnings
         }
         focus={state.focus}
+        search={search}
+        searchMatches={matches.length}
+        columns={stdout.columns || 80}
       />
     </Box>
   );

@@ -134,7 +134,7 @@ test('back row: hidden at the session root (ISSUE-006)', async () => {
     await wait(200);
     const { raw, frame } = await finish(h);
     const side = sideLines(frame);
-    assert.ok(side[0].startsWith('vault'), 'sidebar header is the root basename');
+    assert.ok(side[0].includes('vault'), 'sidebar header is the root basename');
     assert.ok(side[1].startsWith('▸ aaa'), 'content row 0 = first entry (no back row)');
     assert.ok(side[2].startsWith('▸ sub'), 'content row 1 = second entry');
     assert.ok(side[3].startsWith('  a.md'), 'content row 2 = file entry');
@@ -153,7 +153,7 @@ test('back row: rendered inside a subdirectory, cursor on the first entry (ISSUE
     await enterSub(h);
     const { raw, frame } = await finish(h);
     const side = sideLines(frame);
-    assert.ok(side[0].startsWith('sub'), 'sidebar header is the subdirectory');
+    assert.ok(side[0].includes('sub'), 'sidebar header is the subdirectory');
     assert.ok(side[1].startsWith('  ..'), 'back row at content row 0');
     assert.ok(raw.includes('\x1b[7m  s1.md'), 'cursor on the first entry (row 1), not the back row');
     assert.ok(!raw.includes('\x1b[7m  ..'), 'back row is not the cursor row');
@@ -177,7 +177,7 @@ test('keyboard: Enter on the back row goes up, cursor restored to the entered di
     await wait(250);
     const { raw, frame } = await finish(h);
     const side = sideLines(frame);
-    assert.ok(side[0].startsWith('vault'), 'back at the root');
+    assert.ok(side[0].includes('vault'), 'back at the root');
     assert.ok(raw.includes('\x1b[7m▸ sub'), 'cursor restored to the sub row (idx 1)');
     assert.ok(!raw.includes('\x1b[7m▸ aaa'), 'cursor is not at the top row');
     assert.ok(side[1].startsWith('▸ aaa'), 'content row 0 = first entry (no back row at root)');
@@ -238,7 +238,7 @@ test('mouse: click on the back row (content row 0) goes up (ISSUE-006)', async (
     await wait(300);
     const { raw, frame } = await finish(h);
     const side = sideLines(frame);
-    assert.ok(side[0].startsWith('vault'), 'back at the root');
+    assert.ok(side[0].includes('vault'), 'back at the root');
     assert.ok(raw.includes('\x1b[7m▸ sub'), 'cursor restored to the sub row (idx 1)');
     assert.ok(!side.some((l) => l.includes('..')), 'no back row at root');
   } finally {
@@ -255,7 +255,7 @@ test('mouse: click on an entry row applies the back-row offset (ISSUE-006)', asy
     await wait(300);
     const { raw, frame } = await finish(h);
     const side = sideLines(frame);
-    assert.ok(side[0].startsWith('sub'), 'entered the clicked directory');
+    assert.ok(side[0].includes('sub'), 'entered the clicked directory');
     assert.ok(raw.includes('\x1b[7m  s1.md'), 'cursor on the first entry after entering a dir');
     assert.ok(!raw.includes('\x1b[7m  ..'), 'back row is not the cursor row');
     assert.ok(side[1].startsWith('  ..'), 'back row rendered at content row 0');

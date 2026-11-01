@@ -99,40 +99,39 @@ async function finish(h: { inst: ReturnType<typeof render>; out: Writable }): Pr
   return stripAnsi((h.out as unknown as { chunks: string[] }).chunks.join(''));
 }
 
-test('doc focus: hint `↑↓ scroll · g/G · ?` in the status bar (R-3)', async () => {
+test('doc focus: hint in the status bar (R-3 / D-3.2)', async () => {
   const h = setup(false);
   try {
     await wait(200);
     const frame = await finish(h);
-    assert.ok(frame.includes('↑↓ scroll · g/G · ?'), 'doc hint present');
+    assert.ok(frame.includes('↑↓ · / · l · o · y · ?'), 'compact doc hint present at 80 cols');
     assert.ok(!frame.includes('↑↓ move'), 'sidebar hint absent');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
   }
 });
 
-test('after ← (doc → sidebar): hint `↑↓ move · ⏎ open · ?` (R-3)', async () => {
+test('after ← (doc → sidebar): hint `↑↓ move · ⏎ open · ←/→ pane · ?` (R-3 / D-3.2)', async () => {
   const h = setup(false);
   try {
     await wait(200);
     h.stdin.push('\x1b[D'); // ← : focus doc → sidebar (ADR-017 am. 008)
     await wait(300);
     const frame = await finish(h);
-    assert.ok(frame.includes('↑↓ move · ⏎ open · ?'), 'sidebar hint present');
-    assert.ok(!frame.includes('↑↓ scroll'), 'doc hint absent');
+    assert.ok(frame.includes('↑↓ move · ⏎ open'), 'sidebar hint present');
+    assert.ok(!frame.includes('↑↓ · / · l'), 'doc hint absent');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
   }
 });
 
-test('warnings take precedence: hint omitted while a warning is shown (R-3)', async () => {
+test('D-3.2 resilient status bar: key hints never disappear when warnings are present', async () => {
   const h = setup(true);
   try {
     await wait(200);
     const frame = await finish(h);
-    assert.ok(frame.includes('⚠'), 'warning shown in the status bar');
-    assert.ok(!frame.includes('↑↓ scroll'), 'doc hint omitted');
-    assert.ok(!frame.includes('↑↓ move'), 'sidebar hint omitted');
+    assert.ok(frame.includes('⚠ 1'), 'compact warning badge shown in the status bar');
+    assert.ok(frame.includes('↑↓ · / · l · o · y · ?'), 'doc hint remains visible even with warnings');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
   }

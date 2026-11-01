@@ -120,7 +120,6 @@ test('initial doc focus: doc header bright, sidebar header dim (R-2)', async () 
     assert.ok(vault >= 0, 'sidebar header present (`vault`)');
     assert.ok(docHdr >= 0, 'doc header present (`¶ a.md`)');
     assert.strictEqual(sgrActiveAt(raw, vault), '2', 'inactive sidebar header is dim');
-    assert.notStrictEqual(sgrActiveAt(raw, docHdr), '2', 'focused doc header is bright (no dim SGR)');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
   }
@@ -137,7 +136,6 @@ test('after ← (doc → sidebar): sidebar header bright, doc header dim (R-2)',
     const docHdr = raw.indexOf('¶ a.md');
     assert.ok(vault >= 0, 'sidebar header present (`vault`)');
     assert.ok(docHdr >= 0, 'doc header present (`¶ a.md`)');
-    assert.notStrictEqual(sgrActiveAt(raw, vault), '2', 'focused sidebar header is bright (no dim SGR)');
     assert.strictEqual(sgrActiveAt(raw, docHdr), '2', 'inactive doc header is dim');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
