@@ -78,16 +78,26 @@ export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
     sourceDir: dirname(abs),
     resolve: getResolver(ctx),
   };
-  const { lines } = renderTokens(tokens, rctx);
+  const { lines, fences } = renderTokens(tokens, rctx);
   const wrapped = wrapLines(lines, ctx.width);
   const outLines: typeof wrapped = [...wrapped];
+  let metaLinesCount = 0;
   if (ctx.showFrontmatter && meta) {
-    outLines.unshift(...renderMeta(meta, ctx.theme));
+    const metaLines = renderMeta(meta, ctx.theme);
+    metaLinesCount = metaLines.length;
+    outLines.unshift(...metaLines);
   }
   const title = titleOf(meta, tokens, abs);
   let n = 0;
   for (const l of outLines) n += (visible(l.text).match(/ \u26a0/g) ?? []).length;
   const warnings: string[] = [];
   if (n > 0) warnings.push(n + ' unresolved links');
-  return { lines: outLines, meta, title, warnings, source: abs };
+
+  const remappedFences = fences?.map((f) => ({
+    ...f,
+    line: f.line + metaLinesCount,
+    endLine: f.endLine + metaLinesCount,
+  }));
+
+  return { lines: outLines, meta, title, warnings, source: abs, fences: remappedFences };
 }

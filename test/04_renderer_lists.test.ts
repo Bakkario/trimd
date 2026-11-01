@@ -33,15 +33,15 @@ test('ordered numbering computed positionally (dim)', () => {
 test('task items: [ ] all dim; [x] x in success; one space after box', () => {
   const ls = render('- [ ] todo\n- [x] done');
   assert.equal(ls.length, 2);
-  assert.equal(ls[0].text, DIM + '[' + RST + DIM + ' ' + RST + DIM + ']' + RST + ' todo');
-  assert.equal(ls[1].text, DIM + '[' + RST + SUC + 'x' + RST + DIM + ']' + RST + ' done');
+  assert.equal(ls[0].text, DIM + '☐' + RST + ' todo');
+  assert.equal(ls[1].text, SUC + '✔' + RST + ' done');
 });
 
 test('nested task items inherit indentation', () => {
   const ls = render('- [x] a\n  - [ ] b');
   assert.equal(ls.length, 2);
-  assert.equal(ls[0].text, DIM + '[' + RST + SUC + 'x' + RST + DIM + ']' + RST + ' a');
-  assert.equal(ls[1].text, '  ' + DIM + '[' + RST + DIM + ' ' + RST + DIM + ']' + RST + ' b');
+  assert.equal(ls[0].text, SUC + '✔' + RST + ' a');
+  assert.equal(ls[1].text, '  ' + DIM + '☐' + RST + ' b');
 });
 
 test('INV-1.2: no raw "- " markers at line starts', () => {

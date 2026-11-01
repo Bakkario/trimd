@@ -29,12 +29,13 @@ export function highlightAuto(code: string): string {
   return out;
 }
 
-// INV-1.3 / ADR-020 — label language token for a fence info string.
-// math/latex/mermaid (case-insensitive) → 'math' (plain content, never a diagram);
+// INV-1.3 / ADR-020 / ADR-027 (Task 7.3) — label language token for a fence info string.
+// 'mermaid' returns 'mermaid'; 'math'/'latex' return 'math';
 // empty or cli-highlight-unsupported → 'code'; otherwise the language itself.
 export function fenceLabelLang(info: string | null | undefined): string {
   const lang = (info ?? '').trim();
   if (!lang) return 'code';
-  if (['math', 'latex', 'mermaid'].includes(lang.toLowerCase())) return 'math';
+  if (lang.toLowerCase() === 'mermaid') return 'mermaid';
+  if (['math', 'latex'].includes(lang.toLowerCase())) return 'math';
   return supportsLanguage(lang) ? lang : 'code';
 }

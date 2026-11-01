@@ -24,7 +24,7 @@ test('renderFile on the fixture note', () => {
   assert.equal((doc.meta!.data as Record<string, unknown>)['title'], 'Fixture Note');
   assert.deepEqual(doc.meta!.data, { title: 'Fixture Note', tags: ['alpha', 'beta/gamma'] });
   assert.equal(doc.title, 'Fixture Note');
-  assert.deepEqual(doc.warnings, ['1 unresolved links']);
+  assert.deepEqual(doc.warnings, ['2 unresolved links']);
   assert.equal(doc.source, note);
 });
 

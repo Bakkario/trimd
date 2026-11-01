@@ -2,7 +2,7 @@
 
 import type { Token } from 'markdown-it';
 import { existsSync } from 'node:fs';
-import type { LinkSpan, RenderedLine, Theme, ThemeColors } from './types.js';
+import type { FenceBlock, LinkSpan, RenderedLine, Theme, ThemeColors } from './types.js';
 import { parseCallout } from './callouts.js';
 import { fenceLabelLang, highlightAuto, highlightCode } from './highlight.js';
 
@@ -15,7 +15,7 @@ export interface RenderCtx {
 
 // One styled run. sgr = SGR parameter string (e.g. '1;38;5;255'), null = no escape.
 // br marks a hard-break (new logical line); link marks an OSC 8 span (02 §7).
-type LinkKind = 'file' | 'http' | 'wikilink' | 'embed';
+type LinkKind = 'file' | 'http' | 'wikilink' | 'embed' | 'copy';
 interface LinkInfo { href: string; kind: LinkKind; target?: string; resolved?: boolean; }
 interface Seg { text: string; sgr: string | null; br?: boolean; link?: LinkInfo | null; }
 
@@ -296,11 +296,20 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
         break;
       }
       case 'image': {
-        // INV-1.8 placeholder
-        // c.content holds the alt text; the src URL lives in the 'src' attr
+        // D-3.3 / INV-1.8: ▣ Image: <alt || basename(src)> (<src>)
+        // registered as a LinkSpan (kind: 'file' if local path exists, else dim with ⚠)
         const alt = (c.children ?? []).filter((x) => x.type === 'text').map((x) => x.content).join('');
-        const src = (c.attrs ?? []).find((a) => a[0] === 'src')?.[1] ?? '';
-        out.push({ text: '[image: ' + alt + ' → ' + src + ']', sgr: theme.colors.dim || null });
+        const rawSrc = (c.attrs ?? []).find((a) => a[0] === 'src')?.[1] ?? '';
+        const src = String(rawSrc);
+        const base = src.split('/').pop() || src;
+        const label = '▣ Image: ' + (alt || base) + ' (' + src + ')';
+        const abs = src.startsWith('/') ? src : rctx.resolve(src);
+        if (abs !== null && existsSync(abs)) {
+          out.push({ text: label, sgr: theme.colors.dim || null, link: { href: abs, kind: 'file', resolved: true } });
+        } else {
+          out.push({ text: label, sgr: theme.colors.dim || null });
+          out.push({ text: ' \u26a0', sgr: theme.colors.dim || null });
+        }
         break;
       }
       case 'html_inline':
@@ -317,7 +326,7 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
 // Renders the single non-list block starting at ts[i] (paragraph_open, hr, fence,
 // blockquote_open, standalone inline, html_block, or default). Pushes its line(s)
 // into out and returns the index after the block.
-function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], depth = 0): number {
+function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], depth = 0, fences?: FenceBlock[]): number {
   const t = ts[i];
   switch (t.type) {
     case 'paragraph_open': {
@@ -331,23 +340,81 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       out.push([{ text: '─'.repeat(30), sgr: rctx.theme.colors.hr || null }]);
       return i + 1;
     case 'fence': {
-      // 02 §8 / INV-1.3 — dim codeLabel line, then highlighted code as-is (no wrap)
+      // 02 §8 / INV-1.3 / D-3.3 — Code fence on codeBg padded to width:
+      // Header: ── <lang> ────… [y copy] ── (with kind: 'copy' LinkSpan)
+      // Lines: dim line gutter ` <n> │ ` (codeLabel + codeBg) + highlighted code on codeBg
       const labelLang = fenceLabelLang(t.info);
+      const codeBg = rctx.theme.colors.codeBg || null;
+      const codeLabel = rctx.theme.colors.codeLabel || null;
+      const fenceIdx = fences ? fences.length : 0;
+      const copySpanText = '[y copy]';
       const labelPrefix = '── ' + labelLang + ' ';
-      const label = labelPrefix + '─'.repeat(Math.max(0, rctx.width - labelPrefix.length));
-      out.push([{ text: label, sgr: rctx.theme.colors.codeLabel || null }]);
-      // fence token content carries a trailing newline (markdown-it) — not a code line
-      const code = t.content.endsWith('\n') ? t.content.slice(0, -1) : t.content;
-      // 02 §8 / ISSUE-005 — 'code' (empty/unsupported label) → auto-detect,
-      // 'math' → plain (INV-1.3), supported → highlightCode.
-      const codeStr = labelLang === 'math'
-        ? highlightCode(code, null)
-        : labelLang === 'code'
-          ? highlightAuto(code)
-          : highlightCode(code, labelLang);
-      for (const line of codeStr.split('\n')) {
-        out.push([{ text: line, sgr: null }]);
+      const rightSuffix = '──';
+      
+      const headerLine: Seg[] = [];
+      const availDashes = Math.max(1, rctx.width - labelPrefix.length - copySpanText.length - 1 - rightSuffix.length);
+      const leftPart = labelPrefix + '─'.repeat(availDashes) + ' ';
+      headerLine.push({ text: leftPart, sgr: codeBg ? (codeLabel ? codeLabel + ';' + codeBg : codeBg) : codeLabel });
+      headerLine.push({
+        text: copySpanText,
+        sgr: codeBg ? (codeLabel ? codeLabel + ';' + codeBg : codeBg) : codeLabel,
+        link: { href: 'copy:' + fenceIdx, kind: 'copy', resolved: true },
+      });
+      headerLine.push({ text: ' ' + rightSuffix, sgr: codeBg ? (codeLabel ? codeLabel + ';' + codeBg : codeBg) : codeLabel });
+
+      // Pad headerLine to width if needed
+      const headerVis = leftPart.length + copySpanText.length + 1 + rightSuffix.length;
+      if (headerVis < rctx.width && codeBg) {
+        headerLine.push({ text: ' '.repeat(rctx.width - headerVis), sgr: codeBg });
       }
+
+      const fenceStartLine = out.length;
+      out.push(headerLine);
+
+      // fence token content carries a trailing newline (markdown-it) — not a code line
+      const rawCode = t.content.endsWith('\n') ? t.content.slice(0, -1) : t.content;
+      const codeLines = rawCode.split('\n');
+
+      const codeStr = labelLang === 'math'
+        ? highlightCode(rawCode, null)
+        : labelLang === 'code'
+          ? highlightAuto(rawCode)
+          : highlightCode(rawCode, labelLang);
+      const highlightedLines = codeStr.split('\n');
+
+      for (let li = 0; li < highlightedLines.length; li++) {
+        const lineNum = li + 1;
+        const gutterText = ' ' + lineNum + ' │ ';
+        const gutterSeg: Seg = {
+          text: gutterText,
+          sgr: codeBg ? (codeLabel ? codeLabel + ';' + codeBg : codeBg) : codeLabel,
+        };
+        const codeTokens = parseLineText(highlightedLines[li]);
+        const lineSegs: Seg[] = [gutterSeg];
+        let codeContentWidth = 0;
+        for (const tok of codeTokens) {
+          const tokSgr = tok.sgr
+            ? (codeBg ? (tok.sgr.includes(codeBg) ? tok.sgr : tok.sgr + ';' + codeBg) : tok.sgr)
+            : codeBg;
+          lineSegs.push({ text: tok.text, sgr: tokSgr });
+          codeContentWidth += tok.text.length;
+        }
+        const totalVis = gutterText.length + codeContentWidth;
+        if (totalVis < rctx.width && codeBg) {
+          lineSegs.push({ text: ' '.repeat(rctx.width - totalVis), sgr: codeBg });
+        }
+        out.push(lineSegs);
+      }
+
+      if (fences) {
+        fences.push({
+          line: fenceStartLine,
+          endLine: out.length - 1,
+          lang: labelLang,
+          raw: rawCode,
+        });
+      }
+
       return i + 1;
     }
     case 'blockquote_open': {
@@ -518,7 +585,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
   }
 }
 
-function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], listLevel: number, depth = 0): void {
+function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][], listLevel: number, depth = 0, fences?: FenceBlock[]): void {
   while (i < end) {
     const t = ts[i];
     const blockSegs: Seg[][] = [];
@@ -568,7 +635,7 @@ function walk(ts: Token[], i: number, end: number, rctx: RenderCtx, out: Seg[][]
         break;
       }
       default:
-        nextI = renderOneBlock(ts, i, end, rctx, blockSegs, depth);
+        nextI = renderOneBlock(ts, i, end, rctx, blockSegs, depth, fences);
         break;
     }
 
@@ -592,17 +659,9 @@ function listMarkerSegs(rctx: RenderCtx, kind: 'bullet' | 'ordered', n: number, 
   if (meta?.task) {
     if (meta.checked) {
       const success = rctx.theme.colors.success || null;
-      return [
-        { text: '[', sgr: dim },
-        { text: 'x', sgr: success },
-        { text: ']', sgr: dim },
-      ];
+      return [{ text: '✔', sgr: success }];
     }
-    return [
-      { text: '[', sgr: dim },
-      { text: ' ', sgr: dim },
-      { text: ']', sgr: dim },
-    ];
+    return [{ text: '☐', sgr: dim }];
   }
   if (kind === 'ordered') return [{ text: String(n) + '.', sgr: dim }];
   return [{ text: '•', sgr: dim }];
@@ -780,11 +839,12 @@ function lineSpans(segs: Seg[], line: number): LinkSpan[] {
   return spans;
 }
 
-export function renderTokens(tokens: Token[], rctx: RenderCtx): { lines: RenderedLine[] } {
+export function renderTokens(tokens: Token[], rctx: RenderCtx): { lines: RenderedLine[]; fences?: FenceBlock[] } {
   const out: Seg[][] = [];
-  walk(tokens, 0, tokens.length, rctx, out, 0);
+  const fences: FenceBlock[] = [];
+  walk(tokens, 0, tokens.length, rctx, out, 0, 0, fences);
   const lines: RenderedLine[] = out.map((segs, line) => ({ text: segsToString(segs), links: lineSpans(segs, line) }));
-  return { lines };
+  return { lines, fences };
 }
 
 // ── Wrap (task 1.8) — 02 §8 / INV-1.10 ────────────────────────────────────

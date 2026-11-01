@@ -3,7 +3,7 @@ export interface LinkSpan {
   startCol: number; // visible column, 0-based
   endCol: number; // exclusive visible column
   href: string; // absolute path (local) or http(s) URL
-  kind: 'file' | 'http' | 'wikilink' | 'embed';
+  kind: 'file' | 'http' | 'wikilink' | 'embed' | 'copy';
   target?: string; // wikilink/embed target (pre-#)
   resolved?: boolean;
 }
@@ -19,12 +19,27 @@ export interface FrontmatterMeta {
   valid: boolean;
 }
 
+export interface FenceBlock {
+  line: number; // start line index in RenderedDoc.lines
+  endLine: number; // inclusive end line index in RenderedDoc.lines
+  lang: string; // display label language ('code', 'mermaid', 'bash', ...)
+  raw: string; // un-highlighted raw fence text for OSC 52 copy
+}
+
+export interface HeadingEntry {
+  level: number; // 1..6
+  text: string; // visible heading text (ANSI stripped)
+  line: number; // line index in RenderedDoc.lines
+}
+
 export interface RenderedDoc {
   lines: RenderedLine[];
   meta: FrontmatterMeta | null;
   title: string;
   warnings: string[];
   source: string; // absolute path of the rendered file
+  fences?: FenceBlock[];
+  headings?: HeadingEntry[];
 }
 
 export interface ThemeColors {

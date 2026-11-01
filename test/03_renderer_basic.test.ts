@@ -55,8 +55,8 @@ test('INV-1.9: hr = exactly 30 ─ in hr color', () => {
 });
 
 test('INV-1.8: image placeholder exact format', () => {
-  assert.equal(single('![alt text](img/cat.png)'), '\x1b[' + C.dim + 'm[image: alt text → img/cat.png]\x1b[0m');
-  assert.equal(single('![](img/cat.png)'), '\x1b[' + C.dim + 'm[image:  → img/cat.png]\x1b[0m');
+  assert.equal(single('![alt text](img/cat.png)'), '\x1b[' + C.dim + 'm▣ Image: alt text (img/cat.png)\x1b[0m\x1b[' + C.dim + 'm \u26a0\x1b[0m');
+  assert.equal(single('![](img/cat.png)'), '\x1b[' + C.dim + 'm▣ Image: cat.png (img/cat.png)\x1b[0m\x1b[' + C.dim + 'm \u26a0\x1b[0m');
 });
 
 test('INV-1.2 subset: no raw markdown markers survive', () => {

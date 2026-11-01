@@ -60,7 +60,7 @@ function codeLineIndices(src: string, visLines: string[]): { code: Set<number>; 
       const c = t.content.endsWith('\n') ? t.content.slice(0, -1) : t.content;
       return c.split('\n').length;
     });
-  const labelRe = /^── \w+ ─{4,}$/;
+  const labelRe = /^── \w+ ─+.*─*$/;
   const code = new Set<number>();
   let fi = 0;
   let remaining = 0;
