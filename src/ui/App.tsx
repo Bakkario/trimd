@@ -130,12 +130,35 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
   const maxTop = Math.max(0, total - contentRows);
   const scrollTop = Math.min(cur.scrollTop, maxTop);
 
+  // ISSUE-017: compute sidebar scrollTop when entries exceed contentRows
+  const showBack = state.cwd !== root;
+  const sidebarTotalRows = entries.length + (showBack ? 1 : 0);
+  const sidebarScrollTop = sidebarTotalRows > contentRows
+    ? Math.max(0, Math.min(state.cursor - Math.floor(contentRows / 2), sidebarTotalRows - contentRows))
+    : 0;
+
   // 02 §10 / INV-3.6 — mouse: enable SGR 1006 on mount, parse stdin, act on
   // left-button release. The parser callback reads the latest view through a
   // ref, so the listener (and the enable/disable mode bytes) attach exactly
   // once per mount instead of per state change.
-  const view = useRef({ state, doc: activeDocMemo, scrollTop, render, contentRows, searchRowOpen: search?.rowOpen });
-  view.current = { state, doc: activeDocMemo, scrollTop, render, contentRows, searchRowOpen: search?.rowOpen };
+  const view = useRef({
+    state,
+    doc: activeDocMemo,
+    scrollTop,
+    render,
+    contentRows,
+    searchRowOpen: search?.rowOpen,
+    sidebarScrollTop,
+  });
+  view.current = {
+    state,
+    doc: activeDocMemo,
+    scrollTop,
+    render,
+    contentRows,
+    searchRowOpen: search?.rowOpen,
+    sidebarScrollTop,
+  };
 
   useEffect(() => {
     process.stdout.write(MOUSE_ENABLE);
@@ -156,12 +179,14 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
         // the sidebar; if the row carries an entry, it is opened.
         // ISSUE-006 — when shown (cwd ≠ root) content row 0 is the `..`
         // back row (one level up); entry rows are offset by 1.
+        // ISSUE-017 — apply sidebarScrollTop to rowY.
         const showBack = st.cwd !== root;
-        if (showBack && rowY === 0) {
+        const absRow = rowY + view.current.sidebarScrollTop;
+        if (showBack && absRow === 0) {
           setState((s) => ({ ...navUp(s, root, showHidden), focus: 'sidebar' }));
           return;
         }
-        const entry = hitTestSidebar(st.cwd, showHidden, rowY - (showBack ? 1 : 0));
+        const entry = hitTestSidebar(st.cwd, showHidden, absRow - (showBack ? 1 : 0));
         if (!entry) {
           if (st.focus !== 'sidebar') setState((s) => ({ ...s, focus: 'sidebar' }));
           return;
@@ -462,7 +487,7 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
               </Box>
             )}
             <Box flexDirection="row" height={contentRows}>
-              {state.sidebarOpen && <Sidebar entries={entries} cursor={state.cursor} width={30} showBack={state.cwd !== root} />}
+              {state.sidebarOpen && <Sidebar entries={entries} cursor={state.cursor} width={30} showBack={state.cwd !== root} rows={contentRows} />}
               {state.sidebarOpen && (
                 <Box flexDirection="column" width={1} height={contentRows}>
                   {Array.from({ length: contentRows }, (_, i) => (
