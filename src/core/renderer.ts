@@ -469,9 +469,11 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
           : highlightCode(rawCode, labelLang);
       const highlightedLines = codeStr.split('\n');
 
+      const numWidth = Math.max(1, String(highlightedLines.length).length);
+
       for (let li = 0; li < highlightedLines.length; li++) {
         const lineNum = li + 1;
-        const gutterText = ' ' + lineNum + ' │ ';
+        const gutterText = ' ' + String(lineNum).padStart(numWidth, ' ') + ' │ ';
         const gutterSeg: Seg = {
           text: gutterText,
           sgr: codeBg ? (codeLabel ? codeLabel + ';' + codeBg : codeBg) : codeLabel,

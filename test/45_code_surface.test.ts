@@ -69,3 +69,18 @@ test('image placeholder renders ▣ Image: <alt> (<src>) LinkSpan', () => {
   const unresolvedRes = renderTokens(parseTokens('![Pic](missing.png)'), { theme: DEFAULT_THEME, width: 80, sourceDir: '/tmp', resolve: () => null });
   assert.ok(strip(unresolvedRes.lines[0].text).includes('⚠'));
 });
+
+test('code fence line numbers right-align when lines exceed 9', () => {
+  const lines = Array.from({ length: 12 }, (_, i) => `const x${i + 1} = ${i + 1};`).join('\n');
+  const code = '```typescript\n' + lines + '\n```';
+  const rctx = { theme: DEFAULT_THEME, width: 80, sourceDir: '/tmp', resolve: () => null };
+  const res = renderTokens(parseTokens(code), rctx);
+
+  // Line 0 is header. Line 1 is code line 1: gutter should be '  1 │ '
+  assert.ok(strip(res.lines[1].text).startsWith('  1 │ '));
+  // Line 10 is code line 10: gutter should be ' 10 │ '
+  assert.ok(strip(res.lines[10].text).startsWith(' 10 │ '));
+  // Both line 1 and line 10 must have │ at index 5
+  assert.equal(strip(res.lines[1].text).indexOf('│'), 4);
+  assert.equal(strip(res.lines[10].text).indexOf('│'), 4);
+});
