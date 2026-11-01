@@ -140,7 +140,10 @@ test('sidebar closed: no separator, doc header still present (ADR-023)', async (
     await wait(200);
     const { frame } = await finish(h);
     assert.ok(frame.includes('¶ a.md'), 'doc header present without the sidebar');
-    assert.ok(!frame.includes('│'), 'no separator column when the sidebar is closed');
+    // DocPane renders scrollbar │ on the right edge, but there is no separator │ column at col 30
+    const lines = frame.split('\n');
+    const hdr = lines.find((l) => l.includes('¶ a.md'));
+    assert.ok(hdr && !hdr.includes('│'), 'no separator column in header when sidebar is closed');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
   }

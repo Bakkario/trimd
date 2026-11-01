@@ -86,12 +86,12 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
   const [search, setSearch] = useState<SearchState | null>(null);
   const cur = state.stack[state.cur];
 
-  // 02 §11 / ADR-023 — chrome layout: header row (row 0) + content rows +
+  // 02 §11 / ADR-023 / ADR-026 — chrome layout: header row (row 0) + content rows +
   // status row. When search row is open, content rows = terminalRows - 3.
   const stdout = useStdout().stdout as NodeJS.WritableStream & { rows?: number; columns?: number };
   const terminalRows = stdout.rows || 24;
   const contentRows = Math.max(1, terminalRows - 2 - (search?.rowOpen ? 1 : 0));
-  const width = Math.max((stdout.columns || 80) - (state.sidebarOpen ? 31 : 0), 40);
+  const width = Math.max((stdout.columns || 80) - (state.sidebarOpen ? 31 : 0) - 5, 40);
 
   // 02 §11 / INV-3.8 — the theme object follows state.themeId (T cycles it
   // via nextTheme over allThemeIds()). The initial prop's theme is kept
@@ -149,6 +149,7 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
     contentRows,
     searchRowOpen: search?.rowOpen,
     sidebarScrollTop,
+    docWidth: width,
   });
   view.current = {
     state,
@@ -158,6 +159,7 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
     contentRows,
     searchRowOpen: search?.rowOpen,
     sidebarScrollTop,
+    docWidth: width,
   };
 
   useEffect(() => {
@@ -204,8 +206,16 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
       // is a no-op.
       if (st.sidebarOpen && e.x === 30) return;
       // Doc pane starts at terminal column 31 when the sidebar is open
-      // (30-col sidebar + 1-col separator); LinkSpan columns are pane-relative.
-      const docX = e.x - (st.sidebarOpen ? 31 : 0);
+      // (30-col sidebar + 1-col separator). D-3.2 (ADR-026): 2-space left gutter,
+      // prose width, 2-space right gutter, 1-col scrollbar.
+      // docX = e.x - (sidebarOpen ? 31 : 0) - 2. Clicks inside gutters or scrollbar
+      // focus the doc without firing a link.
+      const paneX = e.x - (st.sidebarOpen ? 31 : 0);
+      const docX = paneX - 2;
+      if (docX < 0 || docX >= view.current.docWidth) {
+        if (st.focus !== 'doc') setState((s) => ({ ...s, focus: 'doc' }));
+        return;
+      }
       const span = hitTestDoc(doc, top, docX, rowY);
       if (!span) {
         // INV-3.6 (am. ISSUE-003) — doc-region click outside a link
@@ -498,11 +508,11 @@ export default function App({ doc, root, theme, themeId, sidebarOpen, showHidden
               {activeDocMemo.lines.length === 0 ? (
                 // R-4 (ISSUE-013) — an empty doc renders one dim row in
                 // place of the (theme-free) DocPane.
-                <Box flexDirection="column" width={width}>
-                  <Text>{paint(themeObj, 'dim', '(empty document)')}</Text>
+                <Box flexDirection="column" width={width + 5}>
+                  <Text>{'  ' + paint(themeObj, 'dim', '(empty document)')}</Text>
                 </Box>
               ) : (
-                <DocPane doc={activeDocMemo} scrollTop={scrollTop} rows={contentRows} width={width} />
+                <DocPane doc={activeDocMemo} scrollTop={scrollTop} rows={contentRows} width={width} theme={themeObj} />
               )}
             </Box>
           </>

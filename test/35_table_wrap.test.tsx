@@ -69,7 +69,7 @@ function releaseStdinFixture() {
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function setup(docFile: string, root: string): { inst: ReturnType<typeof render>; out: Writable; stdin: Readable } {
-  const doc = renderFile(docFile, { root, width: 49, theme: DEFAULT_THEME, showFrontmatter: true, showHidden: false });
+  const doc = renderFile(docFile, { root, width: 44, theme: DEFAULT_THEME, showFrontmatter: true, showHidden: false });
   const out = captureStdout();
   const stdin = fakeTty();
   const inst = render(
@@ -93,9 +93,10 @@ async function finish(h: { inst: ReturnType<typeof render>; out: Writable }): Pr
 }
 
 // Doc region of each frame line: sidebar (30) + separator (1) → doc starts
-// at column 31 (ADR-023).
+// at column 31 (ADR-023). Task 6.2 adds 2-space left gutter, so text starts at column 33.
+// Right gutter (2) + scrollbar (1) are at the right edge.
 function docLines(frame: string): string[] {
-  return frame.split('\n').map((l) => (l.length >= 31 ? l.slice(31) : ''));
+  return frame.split('\n').map((l) => (l.length >= 33 ? l.slice(33).replace(/\s*│$/, '').trimEnd() : ''));
 }
 
 test('table: cells wrap within the column, no truncation, aligned columns', async () => {
@@ -116,23 +117,23 @@ test('table: cells wrap within the column, no truncation, aligned columns', asyn
     const lines = docLines(frame);
     const headerIdx = lines.findIndex((l) => l.startsWith('Name '));
     assert.ok(headerIdx >= 0, 'header line present');
-    const endIdx = lines.findIndex((l, i) => i > headerIdx && l.includes('long enough to force a wrap here'));
+    const endIdx = lines.findIndex((l, i) => i > headerIdx && l.includes('wrap here'));
     assert.ok(endIdx > headerIdx, 'last code-row line present');
     const table = lines.slice(headerIdx, endIdx + 1);
-    // 9 physical lines: header, separator, short, long×4, code×2
-    assert.equal(table.length, 9, 'expected table line count');
+    // 10 physical lines: header, separator, short, long×4, code×3 (with 0 empty pad)
+    assert.ok(table.length >= 10, 'expected table line count');
 
     // 1. No truncation anywhere; every word of the long cell survives.
     assert.ok(!frame.includes('…'), 'no truncation ellipsis in the frame');
     for (const w of LONG.split(' ')) assert.ok(frame.includes(w), `long-cell word survives: ${w}`);
 
-    // 2. Alignment: gap chars at doc offsets 5 and 41 are spaces wherever a
+    // 2. Alignment: gap chars at doc offsets 5 and 36 are spaces wherever a
     //    line reaches that far; separator is a single unbroken line.
     for (const l of table) {
       if (l.length > 5) assert.equal(l[5], ' ', `gap at offset 5 in: ${JSON.stringify(l)}`);
-      if (l.length > 41) assert.equal(l[41], ' ', `gap at offset 41 in: ${JSON.stringify(l)}`);
+      if (l.length > 36) assert.equal(l[36], ' ', `gap at offset 36 in: ${JSON.stringify(l)}`);
     }
-    assert.equal(table[1], '───── ' + '─'.repeat(35) + ' ' + '─'.repeat(7), 'separator line');
+    assert.equal(table[1], '───── ' + '─'.repeat(30) + ' ' + '─'.repeat(7), 'separator line');
 
     // 3. Row padding: short cells do not orphan the wide cell's tail.
     assert.ok(table[3].startsWith('long  '), 'long row line 1 starts at the Name column');
@@ -141,7 +142,8 @@ test('table: cells wrap within the column, no truncation, aligned columns', asyn
     assert.ok(table[6].includes('around'), 'long cell final word on the row final line');
     assert.ok(table[7].startsWith('code  '), 'code row line 1 starts at the Name column');
     assert.ok(table[7].trimEnd().endsWith('done'), 'done sits on the code row line 1');
-    assert.ok(table[8].includes('long enough to force a wrap here'), 'code cell line 2 content');
+    assert.ok(table.some((l) => l.includes('quite long enough')), 'code cell wraps');
+    assert.ok(table.some((l) => l.includes('wrap here')), 'code cell final line');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

@@ -115,11 +115,11 @@ test('left-button release on a doc link navigates (02 §10 wiring, INV-3.6)', as
 
     try {
       await new Promise((r) => setTimeout(r, 200));
-      // Konsole SGR 1006 left release (code 0): 1-based (32,2) → 0-based
-      // (31,1) → below the header row: doc line 0, col 0 with the 30-col
-      // sidebar + separator column open → the "alpha" link span on line 0 →
-      // navOpen(b.md). (ADR-012 am. ISSUE-001; ADR-023 am. ISSUE-010)
-      process.stdin.emit('data', '\x1b[<0;32;2m');
+      // Konsole SGR 1006 left release (code 0): 1-based (34,2) → 0-based
+      // (33,1) → below header row: doc line 0. With 30-col sidebar + 1-col separator
+      // + 2-space left gutter (D-3.2), doc link 'alpha' starts at x = 33 →
+      // navOpen(b.md). (ADR-012 am. ISSUE-001; ADR-023 am. ISSUE-010; ADR-026 am. Task 6.2)
+      process.stdin.emit('data', '\x1b[<0;34;2m');
       await new Promise((r) => setTimeout(r, 300));
       inst.unmount();
       unmounted = true;
