@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import type { RenderedDoc, Theme } from '../core/types.js';
 import { paint } from '../core/themes.js';
-import { stripAnsi } from '../core/renderer.js';
+import { visibleWidth } from '../core/renderer.js';
 
 // 02 §11 / D-3.2 (ADR-026) — DocPane: pure display of lines [scrollTop, scrollTop+rows).
 // Each row is formatted as: 2 left spaces + text padded to `width` + 2 right spaces + 1-col scrollbar.
@@ -37,7 +37,7 @@ export default function DocPane({ doc, scrollTop, rows, width, theme }: DocPaneP
         }
         const barStr = theme ? paint(theme, barColorKey, barChar) : barChar;
 
-        const visLen = stripAnsi(l.text).length;
+        const visLen = visibleWidth(l.text);
         const padLen = Math.max(0, width - visLen);
         const pad = ' '.repeat(padLen);
 

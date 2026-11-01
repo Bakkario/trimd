@@ -76,9 +76,69 @@ export function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\]]*\\/g, '');
 }
 
-// 02 §8 — visible width: strip SGR and OSC 8 sequences (exact regexes), then count.
+// 02 §8 — visible width: strip SGR and OSC 8 sequences (exact regexes), then measure terminal column width.
+export function charWidth(cp: number): number {
+  if (cp === 0 || cp < 32 || (cp >= 0x7f && cp < 0xa0)) return 0;
+  // Combining marks and variation selectors (zero-width)
+  if (
+    (cp >= 0x0300 && cp <= 0x036f) ||
+    (cp >= 0x1ab0 && cp <= 0x1aff) ||
+    (cp >= 0x1dc0 && cp <= 0x1dff) ||
+    (cp >= 0x20d0 && cp <= 0x20ff) ||
+    (cp >= 0xfe00 && cp <= 0xfe0f) ||
+    (cp >= 0xfe20 && cp <= 0xfe2f) ||
+    (cp >= 0xe0100 && cp <= 0xe01ef)
+  ) return 0;
+  // Wide / Fullwidth characters (East Asian Width W and F) + standard emojis (width 2)
+  if (
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2329 && cp <= 0x232a) ||
+    (cp >= 0x2e80 && cp <= 0x303e) ||
+    (cp >= 0x3040 && cp <= 0x309f) ||
+    (cp >= 0x30a0 && cp <= 0x30ff) ||
+    (cp >= 0x3100 && cp <= 0x312f) ||
+    (cp >= 0x3130 && cp <= 0x318f) ||
+    (cp >= 0x3190 && cp <= 0x31ef) ||
+    (cp >= 0x3200 && cp <= 0x32fe) ||
+    (cp >= 0x3300 && cp <= 0x33ff) ||
+    (cp >= 0x3400 && cp <= 0x4dbf) ||
+    (cp >= 0x4e00 && cp <= 0x9fff) ||
+    (cp >= 0xa960 && cp <= 0xa97f) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xd7b0 && cp <= 0xd7ff) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe10 && cp <= 0xfe19) ||
+    (cp >= 0xfe30 && cp <= 0xfe6f) ||
+    (cp >= 0xff01 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x20000 && cp <= 0x3fffd) ||
+    (cp >= 0x1f300 && cp <= 0x1f64f) ||
+    (cp >= 0x1f680 && cp <= 0x1f6ff) ||
+    (cp >= 0x1f900 && cp <= 0x1f9ff) ||
+    (cp >= 0x1fa70 && cp <= 0x1faff) ||
+    cp === 0x26a1 || // ⚡
+    cp === 0x23f3 || // ⏳
+    cp === 0x231a || cp === 0x231b ||
+    cp === 0x2614 || cp === 0x2615 ||
+    cp === 0x26bd || cp === 0x26be ||
+    cp === 0x26c4 || cp === 0x26c5 ||
+    cp === 0x26ea || cp === 0x26f5
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
 export function visibleWidth(s: string): number {
-  return stripAnsi(s).length;
+  const stripped = stripAnsi(s);
+  let w = 0;
+  for (const ch of stripped) {
+    const cp = ch.codePointAt(0);
+    if (cp !== undefined) {
+      w += charWidth(cp);
+    }
+  }
+  return w;
 }
 
 function segsVisible(segs: Seg[]): number {
@@ -352,7 +412,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       const rightSuffix = '──';
       
       const headerLine: Seg[] = [];
-      const availDashes = Math.max(1, rctx.width - labelPrefix.length - copySpanText.length - 1 - rightSuffix.length);
+      const availDashes = Math.max(1, rctx.width - labelPrefix.length - copySpanText.length - 2 - rightSuffix.length);
       const leftPart = labelPrefix + '─'.repeat(availDashes) + ' ';
       headerLine.push({ text: leftPart, sgr: codeBg ? (codeLabel ? codeLabel + ';' + codeBg : codeBg) : codeLabel });
       headerLine.push({
@@ -363,7 +423,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       headerLine.push({ text: ' ' + rightSuffix, sgr: codeBg ? (codeLabel ? codeLabel + ';' + codeBg : codeBg) : codeLabel });
 
       // Pad headerLine to width if needed
-      const headerVis = leftPart.length + copySpanText.length + 1 + rightSuffix.length;
+      const headerVis = visibleWidth(leftPart + copySpanText + ' ' + rightSuffix);
       if (headerVis < rctx.width && codeBg) {
         headerLine.push({ text: ' '.repeat(rctx.width - headerVis), sgr: codeBg });
       }
@@ -397,9 +457,9 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
             ? (codeBg ? (tok.sgr.includes(codeBg) ? tok.sgr : tok.sgr + ';' + codeBg) : tok.sgr)
             : codeBg;
           lineSegs.push({ text: tok.text, sgr: tokSgr });
-          codeContentWidth += tok.text.length;
+          codeContentWidth += visibleWidth(tok.text);
         }
-        const totalVis = gutterText.length + codeContentWidth;
+        const totalVis = visibleWidth(gutterText) + codeContentWidth;
         if (totalVis < rctx.width && codeBg) {
           lineSegs.push({ text: ' '.repeat(rctx.width - totalVis), sgr: codeBg });
         }
