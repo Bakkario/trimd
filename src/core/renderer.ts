@@ -1053,12 +1053,14 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
     // ISSUE-016 / D-3.3: Check for blockquote/callout prefix (sequence of '│ ' or '┃ ' optionally followed by '  ')
     interface PrefixPart { tok: WTok; text: string; oldCol: number; }
     const prefixParts: PrefixPart[] = [];
+    const contPrefixParts: PrefixPart[] = [];
     let tokIdx = 0;
     let scanCol = 0;
     while (tokIdx < toks.length) {
       const tok = toks[tokIdx];
       if (tok.text === '│ ' || tok.text === '┃ ') {
         prefixParts.push({ tok, text: tok.text, oldCol: scanCol });
+        contPrefixParts.push({ tok, text: tok.text, oldCol: scanCol });
         scanCol += 2;
         tokIdx++;
       } else {
@@ -1069,12 +1071,57 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
       const tok = toks[tokIdx];
       if (tok.text === '  ' || tok.text.startsWith('  ')) {
         prefixParts.push({ tok, text: '  ', oldCol: scanCol });
+        contPrefixParts.push({ tok, text: '  ', oldCol: scanCol });
         scanCol += 2;
         // If tok.text was longer than 2 spaces, slice the rest
         if (tok.text.length > 2) {
           toks[tokIdx] = { ...tok, text: tok.text.slice(2) };
         } else {
           tokIdx++;
+        }
+      }
+    }
+
+    // ISSUE-021: Check for list item prefix (optional leading indent + marker '•'/'✔'/'☐'/'<n>.' + ' ')
+    if (prefixParts.length === 0) {
+      let tIdx = 0;
+      let sCol = 0;
+      let indentSpaces = '';
+      let indentTok: WTok | null = null;
+      if (tIdx < toks.length && /^(  )+$/.test(toks[tIdx].text)) {
+        indentSpaces = toks[tIdx].text;
+        indentTok = toks[tIdx];
+        sCol += indentSpaces.length;
+        tIdx++;
+      }
+      if (tIdx < toks.length) {
+        const mTok = toks[tIdx];
+        if (mTok.text === '•' || mTok.text === '✔' || mTok.text === '☐' || /^\d+\.$/.test(mTok.text)) {
+          // Check following space
+          let spaceFound = false;
+          let spaceCol = sCol + mTok.text.length;
+          if (tIdx + 1 < toks.length && toks[tIdx + 1].text.startsWith(' ')) {
+            spaceFound = true;
+          }
+          if (spaceFound) {
+            if (indentTok) {
+              prefixParts.push({ tok: indentTok, text: indentSpaces, oldCol: 0 });
+            }
+            prefixParts.push({ tok: mTok, text: mTok.text, oldCol: sCol });
+            const nextTok = toks[tIdx + 1];
+            prefixParts.push({ tok: nextTok, text: ' ', oldCol: spaceCol });
+            if (nextTok.text.length > 1) {
+              toks[tIdx + 1] = { ...nextTok, text: nextTok.text.slice(1) };
+            } else {
+              toks.splice(tIdx + 1, 1);
+            }
+            tokIdx = tIdx + 1;
+            scanCol = spaceCol + 1;
+
+            const hangWidth = visibleWidth(indentSpaces) + visibleWidth(mTok.text) + 1;
+            const dummyTok: WTok = { text: ' '.repeat(hangWidth), sgr: null, url: null };
+            contPrefixParts.push({ tok: dummyTok, text: ' '.repeat(hangWidth), oldCol: scanCol });
+          }
         }
       }
     }
@@ -1116,11 +1163,12 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
     let cur: Frag[] = [];
     let curW = 0;
 
-    const startLineWithPrefix = (): void => {
+    const startLineWithPrefix = (isContinuation = false): void => {
       let pCol = 0;
-      for (const p of prefixParts) {
+      const parts = isContinuation && contPrefixParts.length > 0 ? contPrefixParts : prefixParts;
+      for (const p of parts) {
         cur.push({ text: p.text, tok: p.tok, oldCol: p.oldCol, newCol: pCol });
-        pCol += p.text.length;
+        pCol += visibleWidth(p.text);
       }
       curW = pCol;
     };
@@ -1135,7 +1183,7 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
       while (idx < chars.length) {
         if (curW >= width) {
           pushLine();
-          startLineWithPrefix();
+          startLineWithPrefix(true);
         }
         let chunk = '';
         let chunkW = 0;
@@ -1164,25 +1212,28 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
       }
     };
 
-    startLineWithPrefix();
+    startLineWithPrefix(false);
 
     for (let e = 0; e < entries.length; e++) {
       const ent = entries[e];
-      let sp = '';
-      let spTok: WTok | null = null;
-      if (e > 0) { sp = entries[e - 1].trail; spTok = entries[e - 1].trailTok; }
       const entW = visibleWidth(ent.word);
-      const spW = visibleWidth(sp);
-      if (cur.length === prefixParts.length || curW + spW + entW > width) {
-        if (cur.length > prefixParts.length) {
-          pushLine();
-          startLineWithPrefix();
-        }
+      const isFirstOnLine = physLines.length === 0 ? cur.length === prefixParts.length : cur.length === contPrefixParts.length;
+
+      if (isFirstOnLine) {
         emitWord(ent);
       } else {
-        if (sp.length) cur.push({ text: sp, tok: spTok ?? ent.tok, oldCol: ent.oldCol - sp.length, newCol: curW });
-        curW += spW;
-        emitWord(ent);
+        const sp = e > 0 ? entries[e - 1].trail : '';
+        const spTok = e > 0 ? entries[e - 1].trailTok : null;
+        const spW = visibleWidth(sp);
+        if (curW + spW + entW > width) {
+          pushLine();
+          startLineWithPrefix(true);
+          emitWord(ent);
+        } else {
+          if (sp.length) cur.push({ text: sp, tok: spTok ?? ent.tok, oldCol: ent.oldCol - sp.length, newCol: curW });
+          curW += spW;
+          emitWord(ent);
+        }
       }
     }
     pushLine();
