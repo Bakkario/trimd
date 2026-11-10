@@ -261,3 +261,208 @@ export function extendedInlinePlugin(md: MarkdownIt): void {
   md.inline.ruler.after('emphasis', 'sub', subRule);
   md.core.ruler.after('inline', 'trimd-extended-text', typographerAndEmojiRule);
 }
+
+// ---- Phase 11.2: Preprocessing for Containers, Abbreviations, Footnotes & Definition Lists ----
+
+function splitCodeFences(src: string): { text: string; isCode: boolean }[] {
+  const chunks: { text: string; isCode: boolean }[] = [];
+  const lines = src.split('\n');
+  let inFence = false;
+  let fenceMarker = '';
+  let cur: string[] = [];
+
+  for (const line of lines) {
+    const fenceMatch = /^([`~]{3,})/.exec(line.trimStart());
+    if (fenceMatch) {
+      const marker = fenceMatch[1];
+      if (!inFence) {
+        if (cur.length > 0) {
+          chunks.push({ text: cur.join('\n'), isCode: false });
+          cur = [];
+        }
+        inFence = true;
+        fenceMarker = marker[0];
+        cur.push(line);
+      } else if (marker[0] === fenceMarker) {
+        cur.push(line);
+        chunks.push({ text: cur.join('\n'), isCode: true });
+        cur = [];
+        inFence = false;
+        fenceMarker = '';
+      } else {
+        cur.push(line);
+      }
+    } else {
+      cur.push(line);
+    }
+  }
+  if (cur.length > 0) {
+    chunks.push({ text: cur.join('\n'), isCode: inFence });
+  }
+  return chunks;
+}
+
+export function preprocessExtendedMarkdown(src: string): string {
+  const chunks = splitCodeFences(src);
+  const abbrs = new Map<string, string>();
+  const fnDefs = new Map<string, string>();
+
+  // Pass 1: Parse and transform containers, abbreviations, footnote defs, and definition lists
+  for (const chunk of chunks) {
+    if (chunk.isCode) continue;
+
+    // Custom containers: ::: <type> [title]\n...\n:::
+    chunk.text = chunk.text.replace(/^::: *(\w+)(?: +(.*))?\n([\s\S]*?)\n:::\s*$/gm, (_, type, title, body) => {
+      const headerTitle = title && title.trim() ? title.trim() : type;
+      const header = `> [!${type}] ${headerTitle}`;
+      const bodyLines = body.split('\n').map((line: string) => `> ${line}`).join('\n');
+      return `${header}\n${bodyLines}`;
+    });
+
+    // Abbreviations: *[ABBR]: Full text
+    chunk.text = chunk.text.replace(/^\*\[([^\]]+)\]:[ \t]*(.+)$/gm, (_, abbr, full) => {
+      abbrs.set(abbr.trim(), full.trim());
+      return '';
+    });
+
+    // Footnote block definitions: [^id]: definition text
+    const lines = chunk.text.split('\n');
+    const outLines: string[] = [];
+    let curFnId: string | null = null;
+    let curFnLines: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const defMatch = /^\[\^([^\]]+)\]:[ \t]*(.*)$/.exec(line);
+      if (defMatch) {
+        if (curFnId) {
+          fnDefs.set(curFnId, curFnLines.join('\n').trim());
+        }
+        curFnId = defMatch[1];
+        curFnLines = [defMatch[2]];
+      } else if (curFnId) {
+        if (/^(?: {4}|\t)(.*)$/.test(line)) {
+          curFnLines.push(line.replace(/^(?: {4}|\t)/, ''));
+        } else if (line.trim() === '' && i + 1 < lines.length && /^(?: {4}|\t)/.test(lines[i + 1])) {
+          curFnLines.push('');
+        } else {
+          fnDefs.set(curFnId, curFnLines.join('\n').trim());
+          curFnId = null;
+          curFnLines = [];
+          outLines.push(line);
+        }
+      } else {
+        outLines.push(line);
+      }
+    }
+    if (curFnId) {
+      fnDefs.set(curFnId, curFnLines.join('\n').trim());
+    }
+    chunk.text = outLines.join('\n');
+
+    // Definition lists: Term followed by : or ~ definitions
+    const dLines = chunk.text.split('\n');
+    const dResult: string[] = [];
+    let i = 0;
+    while (i < dLines.length) {
+      const line = dLines[i];
+      let nextDefIdx = -1;
+      if (i + 1 < dLines.length && /^[ \t]*[:~][ \t]+/.test(dLines[i + 1])) {
+        nextDefIdx = i + 1;
+      } else if (i + 2 < dLines.length && dLines[i + 1].trim() === '' && /^[ \t]*[:~][ \t]+/.test(dLines[i + 2])) {
+        nextDefIdx = i + 2;
+      }
+
+      const isTerm = nextDefIdx !== -1 &&
+        line.trim() !== '' &&
+        !line.startsWith('#') &&
+        !line.startsWith('>') &&
+        !line.startsWith('- ') &&
+        !line.startsWith('* ') &&
+        !line.startsWith('::: ') &&
+        !line.startsWith('|');
+
+      if (isTerm) {
+        const term = line.trim();
+        const boldTerm = term.startsWith('**') && term.endsWith('**') ? term : `**${term}**`;
+        dResult.push(boldTerm);
+        dResult.push('');
+        i = nextDefIdx;
+        while (i < dLines.length) {
+          const dLine = dLines[i];
+          const defMatch = /^[ \t]*[:~][ \t]+(.*)/.exec(dLine);
+          if (defMatch) {
+            dResult.push(`- ${defMatch[1]}`);
+            i++;
+          } else if (dLine.trim() === '') {
+            if (i + 1 < dLines.length && /^[ \t]*[:~][ \t]+/.test(dLines[i + 1])) {
+              i++;
+            } else if (i + 1 < dLines.length && /^(?: {4}|\t)/.test(dLines[i + 1])) {
+              dResult.push('');
+              i++;
+            } else {
+              break;
+            }
+          } else if (/^(?: {2,4}|\t)/.test(dLine) || (!dLine.startsWith('#') && !dLine.startsWith('-') && !dLine.startsWith('`'))) {
+            dResult.push(`  ${dLine.trim()}`);
+            i++;
+          } else {
+            break;
+          }
+        }
+      } else {
+        dResult.push(line);
+        i++;
+      }
+    }
+    chunk.text = dResult.join('\n');
+  }
+
+  // Pass 2: Replace abbreviations and footnote references in non-code chunks
+  const idToNum = new Map<string, number>();
+  const orderedDefs: { num: number; text: string }[] = [];
+
+  for (const chunk of chunks) {
+    if (chunk.isCode) continue;
+
+    // Abbreviations replacement (first whole-word match)
+    for (const [abbr, fullText] of abbrs) {
+      const escaped = abbr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const wordRe = new RegExp(`\\b${escaped}\\b`, 'g');
+      let replaced = false;
+      chunk.text = chunk.text.replace(wordRe, (match) => {
+        if (!replaced) {
+          replaced = true;
+          return `${match} (${fullText})`;
+        }
+        return match;
+      });
+    }
+
+    // Footnote references: [^id] or ^[inline text]
+    chunk.text = chunk.text.replace(/(\[\^([^\]]+)\]|\^\[([^\]]+)\])/g, (_, fullMatch, refId, inlineText) => {
+      if (refId) {
+        let num = idToNum.get(refId);
+        if (num === undefined) {
+          num = idToNum.size + 1;
+          idToNum.set(refId, num);
+          const def = fnDefs.get(refId) ?? refId;
+          orderedDefs.push({ num, text: def });
+        }
+        return `[${num}]`;
+      } else if (inlineText) {
+        const num = idToNum.size + 1;
+        idToNum.set(`__inline_${num}`, num);
+        orderedDefs.push({ num, text: inlineText.trim() });
+        return `[${num}]`;
+      }
+      return fullMatch;
+    });
+  }
+
+  let finalMd = chunks.map((c) => c.text).join('\n');
+  if (orderedDefs.length > 0) {
+    finalMd += '\n\n## Footnotes\n\n' + orderedDefs.map((d) => `${d.num}. ${d.text}`).join('\n\n') + '\n';
+  }
+  return finalMd;
+}

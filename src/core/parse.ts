@@ -3,7 +3,7 @@ import taskLists from 'markdown-it-task-lists';
 import { wikilinkPlugin } from './rules-wikilink.js';
 import { tagPlugin } from './rules-tag.js';
 import { embedPlugin } from './rules-embed.js';
-import { extendedInlinePlugin } from './rules-extended.js';
+import { extendedInlinePlugin, preprocessExtendedMarkdown } from './rules-extended.js';
 import type { StateInline, StateCore, Token } from 'markdown-it';
 
 // ---- custom inline rule: ~~strikethrough~~ -> s_open / text / s_close ----
@@ -80,5 +80,5 @@ function getMd(): InstanceType<typeof MarkdownIt> {
 }
 
 export function parseTokens(src: string): Token[] {
-  return getMd().parse(src, {});
+  return getMd().parse(preprocessExtendedMarkdown(src), {});
 }

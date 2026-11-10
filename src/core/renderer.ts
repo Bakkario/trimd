@@ -569,7 +569,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
           { text: '┃ ', sgr: border },
           { text: iconMarker, sgr: boldBorder },
         ];
-        if (co.title !== null && co.title.length > 0) {
+        if (co.title !== null && co.title.length > 0 && co.title.toUpperCase() !== co.type) {
           titleSegs.push(
             { text: ' — ', sgr: null },
             { text: co.title, sgr: emphSgr(rctx.theme, 'bold') },
