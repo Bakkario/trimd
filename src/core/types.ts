@@ -89,10 +89,23 @@ export interface ThemeColors {
   scrollbar: string;
 }
 
+export type IconMode = 'nerd' | 'emoji' | 'ascii' | 'none' | 'auto';
+
+export interface ThemeIconMap {
+  dir?: string;
+  dirOpen?: string;
+  file?: string;
+  active?: string;
+  readme?: string;
+  spec?: string;
+  task?: string;
+}
+
 export interface Theme {
   id: string;
   name: string;
   colors: ThemeColors;
+  icons?: IconMode | ThemeIconMap;
 }
 
 export interface Config {
@@ -103,6 +116,7 @@ export interface Config {
   root?: string;
   width?: number;
   gfx?: 'kitty' | 'halfblock' | 'unicode' | 'none';
+  icons?: IconMode;
 }
 
 export interface MouseEvt {

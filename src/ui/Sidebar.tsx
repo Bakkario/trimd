@@ -1,11 +1,11 @@
 import { Box, Text } from 'ink';
 import type { DirEntry } from '../core/resolve.js';
-import type { Theme } from '../core/types.js';
-import { paint } from '../core/themes.js';
+import type { Theme, ThemeColors, ThemeIconMap } from '../core/types.js';
+import { paint, resolveIconSet } from '../core/themes.js';
 import { visibleWidth } from '../core/renderer.js';
 
-// 02 §11 / D-4.1 (ADR-031) — Sidebar: Superfile-style rounded box frame,
-// role-based icon sets (📁/📂, 📘, 📐, 📋, ● 📝, 📄), git dirty marks (✱),
+// 02 §11 / D-4.1 (ADR-031, ADR-036) — Sidebar: Superfile-style rounded box frame,
+// configurable icon sets (nerd, emoji, ascii, none), git dirty marks (✱),
 // mtime sort indicator, and embedded bottom border.
 export interface SidebarProps {
   entries: DirEntry[];
@@ -23,6 +23,7 @@ export interface SidebarProps {
   sortBy?: 'name' | 'mtime';
   outgoingLinks?: { label: string; resolved: boolean }[];
   backlinks?: string[];
+  iconSet?: Required<ThemeIconMap>;
 }
 
 function truncate(name: string, maxLen = 26): string {
@@ -44,25 +45,34 @@ function fit(str: string, maxW: number): string {
   return pad > 0 ? s + ' '.repeat(pad) : s;
 }
 
-export function getEntryIcon(e: DirEntry, isAct: boolean, isCursor: boolean, theme?: Theme): string {
+export function getEntryIcon(
+  e: DirEntry,
+  isAct: boolean,
+  isCursor: boolean,
+  theme?: Theme,
+  iconSet?: Required<ThemeIconMap>,
+): string {
+  const set = iconSet ?? resolveIconSet(process.env, theme?.icons);
+  const paintIcon = (key: keyof ThemeColors, icon: string) => (!icon ? '' : theme ? paint(theme, key, icon) : icon);
+
   if (e.isDir) {
-    const icon = isCursor ? '📂 ' : '📁 ';
-    return theme ? paint(theme, 'info', icon) : icon;
+    const icon = isCursor ? set.dirOpen : set.dir;
+    return paintIcon('info', icon);
   }
   if (isAct) {
-    return theme ? paint(theme, 'activeDoc', '● 📝 ') : '● 📝 ';
+    return paintIcon('activeDoc', set.active);
   }
   const n = e.name.toLowerCase();
   if (n === 'readme.md' || n === 'index.md') {
-    return theme ? paint(theme, 'heading2', '📘 ') : '📘 ';
+    return paintIcon('heading2', set.readme);
   }
   if (n.includes('schema') || n.includes('adr') || n.includes('architecture') || n.includes('charter')) {
-    return theme ? paint(theme, 'warning', '📐 ') : '📐 ';
+    return paintIcon('warning', set.spec);
   }
   if (n.includes('log') || n.includes('tracker') || n.includes('task') || n.includes('roadmap')) {
-    return theme ? paint(theme, 'tag', '📋 ') : '📋 ';
+    return paintIcon('tag', set.task);
   }
-  return theme ? paint(theme, 'sidebar', '📄 ') : '📄 ';
+  return paintIcon('sidebar', set.file);
 }
 
 export default function Sidebar({
@@ -81,7 +91,9 @@ export default function Sidebar({
   sortBy,
   outgoingLinks,
   backlinks,
+  iconSet,
 }: SidebarProps) {
+  const activeIcons = iconSet ?? resolveIconSet(process.env, theme?.icons);
   const borderPaint = (s: string): string => {
     if (!theme || theme.id === 'plain') return s;
     const col = focused ? theme.colors.scrollbar : theme.colors.tableBorder;
@@ -124,7 +136,7 @@ export default function Sidebar({
   const frameTopLines: string[] = [borderPaint('╭' + '─'.repeat(innerW) + '╮')];
   if (hasHeader) {
     const sortTag = sortBy === 'mtime' ? ' [mtime]' : '';
-    const headerTitle = `📁 ${cwdLabel ?? 'files'}${sortTag}`;
+    const headerTitle = `${activeIcons.dir}${cwdLabel ?? 'files'}${sortTag}`;
     frameTopLines.push(borderPaint('│') + fit(` ${headerTitle}`, innerW) + borderPaint('│'));
     frameTopLines.push(borderPaint('├' + '─'.repeat(innerW) + '┤'));
   }
@@ -135,7 +147,8 @@ export default function Sidebar({
     if (showBack) {
       const isCursor = cursor === 0;
       const backPrefix = isCursor ? '❯ ' : '  ';
-      const backIcon = theme ? paint(theme, 'info', '📂 ') : '📂 ';
+      const backIconStr = activeIcons.dirOpen || activeIcons.dir || '';
+      const backIcon = backIconStr ? (theme ? paint(theme, 'info', backIconStr) : backIconStr) : '';
       let rawCell = `${backPrefix}${backIcon}..`;
       const pad = innerW - visibleWidth(rawCell);
       if (pad > 0) rawCell += ' '.repeat(pad);
@@ -168,7 +181,8 @@ export default function Sidebar({
   if (showBack) {
     const isCursor = cursor === 0;
     const backPrefix = isCursor ? '❯ ' : '  ';
-    const backIcon = theme ? paint(theme, 'info', '📂 ') : '📂 ';
+    const backIconStr = activeIcons.dirOpen || activeIcons.dir || '';
+    const backIcon = backIconStr ? (theme ? paint(theme, 'info', backIconStr) : backIconStr) : '';
     let rawCell = `${backPrefix}${backIcon}..`;
     const pad = innerW - visibleWidth(rawCell);
     if (pad > 0) rawCell += ' '.repeat(pad);
@@ -186,11 +200,12 @@ export default function Sidebar({
     const row = showBack ? i + 1 : i;
     const isCursor = row === cursor;
 
-    const icon = getEntryIcon(e, isAct, isCursor, theme);
+    const icon = getEntryIcon(e, isAct, isCursor, theme, activeIcons);
     const prefix = isCursor ? '❯ ' : '  ';
     const modSuffix = isMod ? ' ✱' : '';
 
-    const maxNameLen = Math.max(8, innerW - (isAct ? 8 : 6) - (isMod ? 2 : 0));
+    const iconW = visibleWidth(icon);
+    const maxNameLen = Math.max(8, innerW - 2 - iconW - (isMod ? 2 : 0));
     const nameStr = isAct
       ? `\x1b[1m${truncate(e.name, maxNameLen)}\x1b[22m`
       : truncate(e.name, maxNameLen);

@@ -16,6 +16,7 @@ export interface ParsedArgs {
     noFrontmatter?: boolean; noSidebar?: boolean; hidden?: boolean;
     width?: number; debug?: boolean; help?: boolean;
     gfx?: 'kitty' | 'halfblock' | 'unicode' | 'none';
+    icons?: 'nerd' | 'emoji' | 'ascii' | 'none' | 'auto';
   };
 }
 
@@ -44,7 +45,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       const name = eq === -1 ? a.slice(2) : a.slice(2, eq);
       // Unknown flags are detected before value consumption (03: unknown flag
       // → UsageError('unknown flag: --x')), even in the value form --bogus=x.
-      if (name !== 'root' && name !== 'theme' && name !== 'config' && name !== 'width' && name !== 'gfx') {
+      if (name !== 'root' && name !== 'theme' && name !== 'config' && name !== 'width' && name !== 'gfx' && name !== 'icons') {
         throw new UsageError('unknown flag: --' + name);
       }
       let val: string;
@@ -64,6 +65,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
             throw new UsageError('--gfx requires one of: kitty, halfblock, unicode, none');
           }
           flags.gfx = val as 'kitty' | 'halfblock' | 'unicode' | 'none';
+          break;
+        }
+        case 'icons': {
+          if (!['nerd', 'emoji', 'ascii', 'none', 'auto'].includes(val)) {
+            throw new UsageError('--icons requires one of: nerd, emoji, ascii, none, auto');
+          }
+          flags.icons = val as 'nerd' | 'emoji' | 'ascii' | 'none' | 'auto';
           break;
         }
         case 'width': {
@@ -131,6 +139,12 @@ export function loadConfig(path: string): Config {
     }
     cfg.gfx = obj.gfx as 'kitty' | 'halfblock' | 'unicode' | 'none';
   }
+  if (obj.icons !== undefined) {
+    if (typeof obj.icons !== 'string' || !['nerd', 'emoji', 'ascii', 'none', 'auto'].includes(obj.icons)) {
+      throw new ConfigError('config: ' + path + ': icons must be one of: nerd, emoji, ascii, none, auto');
+    }
+    cfg.icons = obj.icons as 'nerd' | 'emoji' | 'ascii' | 'none' | 'auto';
+  }
   return cfg;
 }
 
@@ -144,5 +158,6 @@ export function mergeConfig(cfg: Config, f: ParsedArgs['flags']): Config {
   if (f.hidden !== undefined) out.showHidden = f.hidden;
   if (f.width !== undefined && f.width !== 0) out.width = f.width;
   if (f.gfx !== undefined) out.gfx = f.gfx;
+  if (f.icons !== undefined) out.icons = f.icons;
   return out;
 }

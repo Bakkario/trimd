@@ -18,6 +18,8 @@ Flags:
   --no-sidebar        Start with the sidebar closed
   --hidden            Show hidden (dot) entries in the sidebar
   --width <n>         Force the effective render width
+  --gfx <mode>        Image protocol: kitty, halfblock, unicode, none (default: auto)
+  --icons <mode>      Sidebar icons: nerd, emoji, ascii, none, auto (default: theme / auto)
   --debug             Verbose stderr + stack traces on error
   -h, --help          Print this usage and exit
 `;
@@ -102,4 +104,4 @@ try {
   fail(err, !!flags.debug);
 }
 
-render(<App doc={doc} root={root} theme={theme} themeId={theme.id} sidebarOpen={sidebarOpen} showHidden={showHidden} showFrontmatter={showFrontmatter} gfx={merged.gfx} />);
+render(<App doc={doc} root={root} theme={theme} themeId={theme.id} sidebarOpen={sidebarOpen} showHidden={showHidden} showFrontmatter={showFrontmatter} gfx={merged.gfx} icons={flags.icons ?? merged.icons} />);

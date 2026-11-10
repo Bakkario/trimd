@@ -2,7 +2,7 @@ import { Box, Text, useInput, useStdout } from 'ink';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { basename, relative } from 'node:path';
 import type { LinkSpan, MouseEvt, RenderedDoc, Theme } from '../core/types.js';
-import { paint, allThemeIds, BUILTIN_THEMES, loadUserTheme } from '../core/themes.js';
+import { paint, allThemeIds, BUILTIN_THEMES, loadUserTheme, resolveIconSet } from '../core/themes.js';
 import { renderFile } from '../core/pipeline.js';
 import { listEntries, detectGitModified, clearGitCache, buildIndex, buildBacklinkIndex } from '../core/resolve.js';
 import { navBack, navForward, navOpen, navUp, nextTheme, hitTestDoc, hitTestSidebar } from '../core/nav.js';
@@ -33,6 +33,7 @@ export interface AppProps {
   showFrontmatter: boolean;
   metaExpanded?: boolean;
   gfx?: 'kitty' | 'halfblock' | 'unicode' | 'none';
+  icons?: 'nerd' | 'emoji' | 'ascii' | 'none' | 'auto';
 }
 
 export interface SearchState {
@@ -157,6 +158,7 @@ export default function App({
   showFrontmatter,
   metaExpanded: initialMetaExpanded,
   gfx: initialGfx,
+  icons: initialIcons,
 }: AppProps) {
   const [state, setState] = useState<UiState>(() => ({
     stack: [{ abs: doc.source, doc, scrollTop: 0 }],
@@ -222,6 +224,10 @@ export default function App({
 
   const totalDirs = useMemo(() => entries.filter((e) => e.isDir).length, [entries]);
   const totalNotes = useMemo(() => entries.filter((e) => !e.isDir).length, [entries]);
+  const iconSet = useMemo(
+    () => resolveIconSet(process.env, themeObj.icons, initialIcons),
+    [themeObj.icons, initialIcons]
+  );
 
   const activeOutgoingLinks = useMemo(() => {
     const seen = new Set<string>();
@@ -1065,6 +1071,7 @@ export default function App({
                   gitModAbs={detectGitModified(root)}
                   outgoingLinks={activeOutgoingLinks}
                   backlinks={activeBacklinks}
+                  iconSet={iconSet}
                 />
               )}
               {state.sidebarOpen && (

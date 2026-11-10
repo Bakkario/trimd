@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import type { Theme, ThemeColors, Config } from './types.js';
+import type { Theme, ThemeColors, Config, IconMode, ThemeIconMap } from './types.js';
 import { ConfigError } from './types.js';
 
 export const DEFAULT_THEME: Theme = {
@@ -206,7 +206,92 @@ export const TOKYO_NIGHT_THEME: Theme = {
     activeDoc: '1;38;2;122;162;247',
     scrollbar: '38;2;187;154;247',
   },
+  icons: 'nerd',
 };
+
+export const EMOJI_ICONS: Required<ThemeIconMap> = {
+  dir: '📁 ',
+  dirOpen: '📂 ',
+  file: '📄 ',
+  active: '● 📝 ',
+  readme: '📘 ',
+  spec: '📐 ',
+  task: '📋 ',
+};
+
+export const NERD_ICONS: Required<ThemeIconMap> = {
+  dir: ' ',
+  dirOpen: ' ',
+  file: ' ',
+  active: '●  ',
+  readme: '󰂺 ',
+  spec: ' ',
+  task: ' ',
+};
+
+export const ASCII_ICONS: Required<ThemeIconMap> = {
+  dir: '/ ',
+  dirOpen: '/ ',
+  file: '  ',
+  active: '* ',
+  readme: '  ',
+  spec: '  ',
+  task: '  ',
+};
+
+export const NONE_ICONS: Required<ThemeIconMap> = {
+  dir: '',
+  dirOpen: '',
+  file: '',
+  active: '● ',
+  readme: '',
+  spec: '',
+  task: '',
+};
+
+export function detectNerdFont(env: NodeJS.ProcessEnv): boolean {
+  if (env.NERD_FONT === '1' || env.USE_NERD_FONT === '1' || env.TRIMD_ICONS === 'nerd') {
+    return true;
+  }
+  if (env.KITTY_WINDOW_ID || env.GHOSTTY_RESOURCES_DIR || env.WEZTERM_PANE) {
+    return true;
+  }
+  return false;
+}
+
+export function resolveIconSet(
+  env: NodeJS.ProcessEnv,
+  themeIcons?: IconMode | ThemeIconMap,
+  configIcons?: IconMode,
+): Required<ThemeIconMap> {
+  let mode: IconMode = configIcons ?? (typeof themeIcons === 'string' ? themeIcons : 'auto');
+
+  if (mode === 'auto') {
+    mode = detectNerdFont(env) ? 'nerd' : 'emoji';
+  }
+
+  let base: Required<ThemeIconMap>;
+  switch (mode) {
+    case 'nerd':
+      base = { ...NERD_ICONS };
+      break;
+    case 'ascii':
+      base = { ...ASCII_ICONS };
+      break;
+    case 'none':
+      base = { ...NONE_ICONS };
+      break;
+    case 'emoji':
+    default:
+      base = { ...EMOJI_ICONS };
+      break;
+  }
+
+  if (typeof themeIcons === 'object' && themeIcons !== null) {
+    return { ...base, ...themeIcons };
+  }
+  return base;
+}
 
 const EMPTY_COLORS: ThemeColors = {
   heading1: '',
@@ -323,7 +408,13 @@ export function loadUserTheme(id: string): Theme | null {
   for (const [k, v] of Object.entries(obj.colors as Record<string, string>)) {
     if (k in colors) (colors as Record<string, string>)[k] = v;
   }
-  return { id, name: typeof obj.name === 'string' ? obj.name : id, colors };
+  let icons: Theme['icons'] = undefined;
+  if (typeof obj.icons === 'string') {
+    icons = obj.icons as IconMode;
+  } else if (typeof obj.icons === 'object' && obj.icons !== null) {
+    icons = obj.icons as ThemeIconMap;
+  }
+  return { id, name: typeof obj.name === 'string' ? obj.name : id, colors, ...(icons ? { icons } : {}) };
 }
 
 /** All theme ids in order: built-ins first, then user themes (sorted). */
