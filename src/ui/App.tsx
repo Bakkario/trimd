@@ -4,7 +4,7 @@ import { basename, relative } from 'node:path';
 import type { MouseEvt, RenderedDoc, Theme } from '../core/types.js';
 import { paint, allThemeIds, BUILTIN_THEMES, loadUserTheme } from '../core/themes.js';
 import { renderFile } from '../core/pipeline.js';
-import { listEntries } from '../core/resolve.js';
+import { listEntries, detectGitModified, clearGitCache, buildIndex, buildBacklinkIndex } from '../core/resolve.js';
 import { navBack, navForward, navOpen, navUp, nextTheme, hitTestDoc, hitTestSidebar } from '../core/nav.js';
 import { MOUSE_ENABLE, MOUSE_DISABLE, createMouseParser } from '../core/mouse.js';
 import { openExternal, canOpen } from '../core/open.js';
@@ -171,6 +171,7 @@ export default function App({
   const [outlineOpen, setOutlineOpen] = useState<boolean>(false);
   const [outlineCursor, setOutlineCursor] = useState<number>(0);
   const [toast, setToast] = useState<string | null>(null);
+  const [sidebarSort, setSidebarSort] = useState<'name' | 'mtime'>('name');
   const cur = state.stack[state.cur];
 
   // 02 §11 / ADR-023 / ADR-026 — chrome layout: header row (row 0) + content rows +
@@ -198,8 +199,8 @@ export default function App({
     [cur.abs, width, state.reloadTick, state.themeId, metaExpanded],
   );
   const entries = useMemo(
-    () => listEntries(state.cwd, showHidden),
-    [state.cwd, showHidden, state.reloadTick],
+    () => listEntries(state.cwd, showHidden, sidebarSort),
+    [state.cwd, showHidden, state.reloadTick, sidebarSort],
   );
 
   const matches = useMemo(
@@ -215,6 +216,34 @@ export default function App({
 
   const totalDirs = useMemo(() => entries.filter((e) => e.isDir).length, [entries]);
   const totalNotes = useMemo(() => entries.filter((e) => !e.isDir).length, [entries]);
+
+  const activeOutgoingLinks = useMemo(() => {
+    const seen = new Set<string>();
+    const list: { label: string; resolved: boolean }[] = [];
+    for (const line of activeDocMemo.lines || []) {
+      for (const span of line.links || []) {
+        if (span.kind === 'wikilink' || span.kind === 'file') {
+          const key = span.href;
+          if (!seen.has(key)) {
+            seen.add(key);
+            list.push({ label: span.target || basename(span.href), resolved: true });
+          }
+        }
+      }
+    }
+    return list;
+  }, [cur.abs, activeDocMemo]);
+
+  const activeBacklinks = useMemo(() => {
+    try {
+      const idx = buildIndex(root, showHidden);
+      const map = buildBacklinkIndex(root, idx);
+      const sources = map.get(cur.abs) ?? [];
+      return sources.map((s) => basename(s));
+    } catch {
+      return [];
+    }
+  }, [cur.abs, root, showHidden, state.reloadTick]);
   const total = activeDocMemo.lines.length;
   const maxTop = Math.max(0, total - contentRows);
   const scrollTop = Math.min(cur.scrollTop, maxTop);
@@ -639,7 +668,11 @@ export default function App({
     if (input === 'B') { setState((st) => navBack(st)); return; }
     if (input === 'F') { setState((st) => navForward(st)); return; }
     // INV-3.5 — r = reload (re-render the current doc).
-    if (input === 'r') { setState((st) => ({ ...st, reloadTick: st.reloadTick + 1 })); return; }
+    if (input === 'r') {
+      clearGitCache(root);
+      setState((st) => ({ ...st, reloadTick: st.reloadTick + 1 }));
+      return;
+    }
     // INV-3.8 — T cycles the theme (nextTheme over allThemeIds()).
     if (input === 'T') { setState((st) => nextTheme(st, allThemeIds())); return; }
     // INV-3.7 — ? opens the help overlay.
@@ -725,6 +758,16 @@ export default function App({
     }
 
     if (state.focus === 'sidebar') {
+      // D-4.2 / R-15: s toggles sort between name and mtime
+      if (input === 's') {
+        const nextSort = sidebarSort === 'name' ? 'mtime' : 'name';
+        setSidebarSort(nextSort);
+        setState((st) => ({ ...st, cursor: 0 }));
+        setToast(`sorted by ${nextSort}`);
+        setTimeout(() => setToast(null), 2000);
+        return;
+      }
+
       // INV-3.4 — ↑/↓ move the sidebar cursor; Enter opens the entry.
       // ISSUE-006 — when shown (cwd ≠ root) row 0 is the `..` back row:
       // ↑/↓ clamp across it, Enter on it goes up one level.
@@ -875,6 +918,10 @@ export default function App({
                   theme={themeObj}
                   focused={state.focus === 'sidebar'}
                   cwdLabel={state.cwd === root ? (basename(root) || 'vault') : (relative(root, state.cwd) || basename(state.cwd))}
+                  sortBy={sidebarSort}
+                  gitModAbs={detectGitModified(root)}
+                  outgoingLinks={activeOutgoingLinks}
+                  backlinks={activeBacklinks}
                 />
               )}
               {state.sidebarOpen && (

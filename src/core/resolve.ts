@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import type { Dirent } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 // 02 §9 — session-root index for wikilink/embed resolution and sidebar listing.
 
@@ -73,7 +74,11 @@ export interface DirEntry {
 }
 
 /** One level; dirs first then files, localeCompare(sensitivity 'base'); .md files only. */
-export function listEntries(dir: string, showHidden: boolean): DirEntry[] {
+export function listEntries(
+  dir: string,
+  showHidden: boolean = false,
+  sortBy: 'name' | 'mtime' = 'name'
+): DirEntry[] {
   let dts: Dirent[] = [];
   try {
     dts = readdirSync(dir, { withFileTypes: true });
@@ -91,11 +96,82 @@ export function listEntries(dir: string, showHidden: boolean): DirEntry[] {
       out.push({ name, isDir: false, abs });
     }
   }
-  out.sort((a, b) => {
-    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-  });
+
+  if (sortBy === 'mtime') {
+    const mtimes = new Map<string, number>();
+    for (const e of out) {
+      try {
+        mtimes.set(e.abs, statSync(e.abs).mtimeMs);
+      } catch {
+        mtimes.set(e.abs, 0);
+      }
+    }
+    out.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      const diff = (mtimes.get(b.abs) ?? 0) - (mtimes.get(a.abs) ?? 0);
+      if (diff !== 0) return diff;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+  } else {
+    out.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+  }
   return out;
+}
+
+// Git status detection cached per session root (read-only per ADR-021, ADR-031 / R-14)
+const gitModifiedCache = new Map<string, ReadonlySet<string>>();
+
+export function clearGitCache(root?: string): void {
+  if (root) {
+    gitModifiedCache.delete(root);
+  } else {
+    gitModifiedCache.clear();
+  }
+}
+
+export function detectGitModified(root: string): ReadonlySet<string> {
+  const cached = gitModifiedCache.get(root);
+  if (cached) return cached;
+
+  const result = new Set<string>();
+  try {
+    const topRes = spawnSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      timeout: 500,
+    });
+    if (topRes.status !== 0 || !topRes.stdout) {
+      gitModifiedCache.set(root, result);
+      return result;
+    }
+    const gitTop = topRes.stdout.trim();
+
+    const statusRes = spawnSync('git', ['-C', root, 'status', '--porcelain', '-uall'], {
+      encoding: 'utf8',
+      timeout: 500,
+    });
+    if (statusRes.status !== 0 || !statusRes.stdout) {
+      gitModifiedCache.set(root, result);
+      return result;
+    }
+
+    const lines = statusRes.stdout.split('\n');
+    for (const line of lines) {
+      if (!line || line.length < 4) continue;
+      // status line e.g. " M file.md", "?? untracked.md", "R  old -> new"
+      const pathPart = line.slice(3).trim();
+      const actualPath = pathPart.includes(' -> ') ? pathPart.split(' -> ')[1].trim() : pathPart;
+      const absPath = resolve(gitTop, actualPath);
+      result.add(absPath);
+    }
+  } catch {
+    // git failed or unavailable — strictly fail-safe
+  }
+
+  gitModifiedCache.set(root, result);
+  return result;
 }
 
 // Phase 3 (Task 9.2, ADR-030) — read-only backlink index cached per root.
