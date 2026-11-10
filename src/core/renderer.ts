@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import type { FenceBlock, HeadingEntry, LinkSpan, RenderedLine, Theme, ThemeColors } from './types.js';
 import { parseCallout } from './callouts.js';
 import { fenceLabelLang, highlightAuto, highlightCode } from './highlight.js';
+import { toSuperscript, toSubscript } from './rules-extended.js';
 
 export interface RenderCtx {
   theme: Theme;
@@ -300,11 +301,17 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
   let link: LinkInfo | null = null;
   let linkSgr: string | null = null;
   let linkWarn = false;
+  let inSup = false;
+  let inSub = false;
   for (const c of children) {
     switch (c.type) {
-      case 'text':
-        if (c.content) out.push({ text: c.content, sgr: join(stack), link });
+      case 'text': {
+        let txt = c.content;
+        if (inSup) txt = toSuperscript(txt);
+        if (inSub) txt = toSubscript(txt);
+        if (txt) out.push({ text: txt, sgr: join(stack), link });
         break;
+      }
       case 'softbreak':
         out.push({ text: ' ', sgr: join(stack), link });
         break;
@@ -331,6 +338,34 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
         break;
       case 's_close':
         stack.pop();
+        break;
+      case 'mark_open':
+        stack.push(theme.colors.search || '7');
+        break;
+      case 'mark_close':
+        stack.pop();
+        break;
+      case 'ins_open':
+        stack.push('4;' + (theme.colors.success || '32'));
+        break;
+      case 'ins_close':
+        stack.pop();
+        break;
+      case 'sup_open':
+        inSup = true;
+        if (theme.colors.info) stack.push(theme.colors.info);
+        break;
+      case 'sup_close':
+        inSup = false;
+        if (theme.colors.info) stack.pop();
+        break;
+      case 'sub_open':
+        inSub = true;
+        if (theme.colors.info) stack.push(theme.colors.info);
+        break;
+      case 'sub_close':
+        inSub = false;
+        if (theme.colors.info) stack.pop();
         break;
       case 'link_open': {
         const href = String((c.attrs ?? []).find((a) => a[0] === 'href')?.[1] ?? '');
@@ -572,6 +607,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       let j = i + 1;
       let cells: Seg[][] = [];
       let inHead = false;
+      const colAligns: ('left' | 'center' | 'right')[] = [];
       while (j < end && ts[j].type !== 'table_close') {
         const tok = ts[j];
         if (tok.type === 'thead_open') {
@@ -581,6 +617,17 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
           inHead = false;
           j++;
         } else if (tok.type === 'th_open' || tok.type === 'td_open') {
+          const colIdx = cells.length;
+          const style = String((tok.attrs ?? []).find((a) => a[0] === 'style')?.[1] ?? '');
+          if (colAligns[colIdx] === undefined || inHead) {
+            if (style.includes('text-align:right')) {
+              colAligns[colIdx] = 'right';
+            } else if (style.includes('text-align:center')) {
+              colAligns[colIdx] = 'center';
+            } else {
+              colAligns[colIdx] = 'left';
+            }
+          }
           const inline = ts[j + 1];
           cells.push(renderInline(rctx, inline.children ?? [], inHead ? [headSgr] : []));
           j += 2;
@@ -632,9 +679,21 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
           for (let c = 0; c < cols; c++) {
             line.push({ text: '│ ', sgr: bdrSgr });
             const cellSegs = wrapped[ri][c] ? (wrapped[ri][c][k] ?? []) : [];
-            line.push(...cellSegs);
             const pad = widths[c] - segsVisible(cellSegs);
-            if (pad > 0) line.push({ text: ' '.repeat(pad), sgr: null });
+            const align = colAligns[c] || 'left';
+            if (align === 'right') {
+              if (pad > 0) line.push({ text: ' '.repeat(pad), sgr: null });
+              line.push(...cellSegs);
+            } else if (align === 'center') {
+              const leftPad = Math.floor(pad / 2);
+              const rightPad = pad - leftPad;
+              if (leftPad > 0) line.push({ text: ' '.repeat(leftPad), sgr: null });
+              line.push(...cellSegs);
+              if (rightPad > 0) line.push({ text: ' '.repeat(rightPad), sgr: null });
+            } else {
+              line.push(...cellSegs);
+              if (pad > 0) line.push({ text: ' '.repeat(pad), sgr: null });
+            }
             line.push({ text: ' ', sgr: null });
           }
           line.push({ text: '│', sgr: bdrSgr });
