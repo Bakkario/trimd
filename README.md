@@ -25,7 +25,8 @@ trimd <FILE> [flags]
 | Flag | Description |
 |---|---|
 | `--root <dir>` | Root for wikilink basename resolution + sidebar start dir (default: the directory containing `FILE`) |
-| `--theme <id>` | Theme id, built-in or user theme (default: config / `default`) |
+| `--theme <id>` | Theme id, built-in (`default`, `light`, `dracula`, `tokyo-night`) or user theme (default: config / `default`) |
+| `--gfx <mode>` | Image graphics mode: `kitty` (Kitty Graphics Protocol), `unicode` (half-block fallback), or `none` (default: auto-detected) |
 | `--config <path>` | Alternate config file (default: `$XDG_CONFIG_HOME/trimd/config.json`) |
 | `--no-frontmatter` | Hide the frontmatter metadata block |
 | `--no-sidebar` | Start with the sidebar closed |
@@ -58,8 +59,12 @@ Exit codes: `0` quit/help · `1` file missing · `2` file unreadable / root walk
 | `n` / `N` | Next / previous search match |
 | `l` | Keyboard link-hint mode (numbers visible links `[1..N]`, press number to follow) |
 | `y` | Copy code block in view to system clipboard via OSC 52 (or pick block if multiple) |
-| `o` | Document outline TOC (jump to heading via `↑↓` + Enter or digits `1-9`) |
+| `o` | Document outline TOC (floating modal; jump to heading via `↑↓` + Enter or digits `1-9`) |
+| `p` | Peek wikilink (floating modal previewing first 8 lines of target note; Enter opens, p/Esc closes) |
+| `s` | Toggle sidebar sort order: alphabetical (name) ↔ recent (mtime) |
+| `i` | Cycle image graphics mode: `kitty` ↔ `halfblock` ↔ `none` |
 | `m` | Toggle frontmatter display between compact pill strip and full YAML |
+| Mouse Click | Follow link, open sidebar entry, or click scrollbar track to jump position (R-13) |
 | Mouse Wheel | Scroll document or sidebar by ±3 lines |
 
 ## SSH & OSC 52 Clipboard
@@ -70,7 +75,8 @@ Trimd is built for SSH and remote tmux environments:
 
 ## Theming
 
-Built-in themes: `default`, `light`, `dracula`. `T` cycles built-ins, then user themes, wrapping. `NO_COLOR` / `TERM=dumb` overrides everything with a plain unstyled theme.
+Built-in themes: `default`, `light`, `dracula`, `tokyo-night`. `T` cycles built-ins, then user themes, wrapping. `NO_COLOR` / `TERM=dumb` overrides everything with a plain unstyled theme.
+Terminal window titles are updated dynamically via `OSC 2` (`Trimd — <title>`).
 
 User themes live in `$XDG_CONFIG_HOME/trimd/themes/` (default `~/.config/trimd/themes/`), one JSON file per theme. `id` must match the file name; colors are SGR parameter strings, and any key you omit inherits from the `default` theme:
 
@@ -109,14 +115,20 @@ Reset: `rm -rf ~/.config/trimd`.
 
 Clicking works via the SGR (1006) mouse protocol: click a link in the document to navigate (http(s) links open in the browser), click a sidebar entry to open it. A click also moves keyboard focus to the pane you clicked (doc ↔ sidebar). This requires a terminal with mouse reporting — GNOME Terminal, Konsole, kitty, Alacritty, WezTerm, foot: yes. Inside tmux: add `set -g mouse on` to `.tmux.conf`. Inside screen: not supported (the keyboard remains fully functional).
 
-## Limitations (v1.0)
+## Features (v0.3.0)
 
-- Text only: images, LaTeX, mermaid, and any diagrams are not rendered — they render as dim placeholders (`[image: …]`, `── math ──`).
-- `![[embeds]]` are clickable placeholders, never recursively inlined.
-- No fuzzy search, qmd integration, watch mode, split/multi-pane, bookmarks, or session persistence.
+- **Superfile Framed Sidebar:** Rounded box border (`╭─...─╮` .. `╰─...─╯`), dynamic folder (`📁`) and file (`📄`/`📘`/`📐`) icons, Git status marks (`*` modified), and quick sort toggle (`s`: name ↔ mtime).
+- **Extended Markdown Syntax:** `==mark==` highlight, `++ins++` insertion, `^sup^` superscript (`19ᵗʰ`), `~sub~` subscript (`H₂O`), footnotes (`[^1]`), definition lists (`:`, `~`), abbreviations (`*[HTML]: ...`), and `::: <type>` custom containers.
+- **LaTeX Math Rendering:** Deterministic Unicode math rendering for inline `$...$` and display `$$...$$` blocks (`α → β ⇒ γ ≤ δ ≠ ∞`, `∑`, `∫`, `∇`, fractions, superscripts/subscripts) without raw delimiter noise.
+- **Terminal Graphics & Mermaid Diagrams:** High-DPI inline images and flowcharts via the Kitty Graphics Protocol (`--gfx kitty`), with truecolor half-block Unicode fallback (`--gfx unicode`) for local PNG/JPEG images and flowchart diagrams. Toggle on the fly with `i`.
+- **Z-Layer Floating Modals:** Interactive document outline (`o`) and Wikilink peek (`p`) cards composite seamlessly over the top-right of the document without blanking underlying content.
+- **Tokyo Night Theme:** Truecolor theme matching the Stage 3 modern developer mockup with rich contrast and syntax highlighting.
+- **Terminal Integration:** Click-to-position on the scrollbar track (`R-13`) and dynamic `OSC 2` terminal window titles (`R-16`).
+
+## Limitations
+
+- `![[embeds]]` are clickable previews and placeholders, never infinitely recursively inlined.
+- No command palette, watch mode, split/multi-pane, bookmarks, or session persistence.
 - TUI only — no non-TTY / print-to-stdout mode.
 - Linux only (`xdg-open` for external links); no Windows/macOS.
 - Read-only toward the vault: trimd never writes to or indexes `~/Documents/Obsidian`.
-- Wide characters (CJK/emoji): visible width counts code points, not display cells, so wrapping may be off by one cell.
-
-All of the above are binding non-goals for v1.0 and make up the v2 roadmap.
