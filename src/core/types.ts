@@ -102,6 +102,7 @@ export interface Config {
   showHidden: boolean;
   root?: string;
   width?: number;
+  gfx?: 'kitty' | 'halfblock' | 'unicode' | 'none';
 }
 
 export interface MouseEvt {

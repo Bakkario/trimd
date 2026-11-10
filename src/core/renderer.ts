@@ -13,6 +13,7 @@ export interface RenderCtx {
   width: number;
   sourceDir: string;
   resolve: (t: string) => string | null;
+  gfx?: 'kitty' | 'halfblock' | 'unicode' | 'none';
 }
 
 // One styled run. sgr = SGR parameter string (e.g. '1;38;5;255'), null = no escape.
@@ -73,9 +74,13 @@ function segsToString(segs: Seg[]): string {
     .join('');
 }
 
-// 02 §8 — strip ANSI escapes (SGR and OSC 8 sequences) from a rendered string.
+// 02 §8 — strip ANSI escapes (SGR, OSC 8, Kitty APC, and tmux DCS sequences) from a rendered string.
 export function stripAnsi(s: string): string {
-  return s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\]]*\\/g, '');
+  return s
+    .replace(/\x1bPtmux;[\s\S]*?\x1b\\/g, '')
+    .replace(/\x1b_G[\s\S]*?\x1b\\/g, '')
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .replace(/\x1b\]8;[^\]]*\\/g, '');
 }
 
 // 02 §8 — visible width: strip SGR and OSC 8 sequences (exact regexes), then measure terminal column width.

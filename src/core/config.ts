@@ -15,6 +15,7 @@ export interface ParsedArgs {
     root?: string; theme?: string; config?: string;
     noFrontmatter?: boolean; noSidebar?: boolean; hidden?: boolean;
     width?: number; debug?: boolean; help?: boolean;
+    gfx?: 'kitty' | 'halfblock' | 'unicode' | 'none';
   };
 }
 
@@ -43,7 +44,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       const name = eq === -1 ? a.slice(2) : a.slice(2, eq);
       // Unknown flags are detected before value consumption (03: unknown flag
       // → UsageError('unknown flag: --x')), even in the value form --bogus=x.
-      if (name !== 'root' && name !== 'theme' && name !== 'config' && name !== 'width') {
+      if (name !== 'root' && name !== 'theme' && name !== 'config' && name !== 'width' && name !== 'gfx') {
         throw new UsageError('unknown flag: --' + name);
       }
       let val: string;
@@ -58,6 +59,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
         case 'root': flags.root = val; break;
         case 'theme': flags.theme = val; break;
         case 'config': flags.config = val; break;
+        case 'gfx': {
+          if (!['kitty', 'halfblock', 'unicode', 'none'].includes(val)) {
+            throw new UsageError('--gfx requires one of: kitty, halfblock, unicode, none');
+          }
+          flags.gfx = val as 'kitty' | 'halfblock' | 'unicode' | 'none';
+          break;
+        }
         case 'width': {
           const n = Number(val);
           if (!Number.isInteger(n) || n <= 0) throw new UsageError('invalid --width: ' + val);
@@ -117,6 +125,12 @@ export function loadConfig(path: string): Config {
     }
     cfg.width = obj.width;
   }
+  if (obj.gfx !== undefined) {
+    if (typeof obj.gfx !== 'string' || !['kitty', 'halfblock', 'unicode', 'none'].includes(obj.gfx)) {
+      throw new ConfigError('config: ' + path + ': gfx must be one of: kitty, halfblock, unicode, none');
+    }
+    cfg.gfx = obj.gfx as 'kitty' | 'halfblock' | 'unicode' | 'none';
+  }
   return cfg;
 }
 
@@ -129,5 +143,6 @@ export function mergeConfig(cfg: Config, f: ParsedArgs['flags']): Config {
   if (f.noSidebar !== undefined) out.sidebarOpen = !f.noSidebar;
   if (f.hidden !== undefined) out.showHidden = f.hidden;
   if (f.width !== undefined && f.width !== 0) out.width = f.width;
+  if (f.gfx !== undefined) out.gfx = f.gfx;
   return out;
 }

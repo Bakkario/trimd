@@ -18,6 +18,7 @@ export interface PipelineCtx {
   showFrontmatter: boolean;
   showHidden?: boolean;
   metaExpanded?: boolean; // Phase 3 (Task 7.4, ADR-027): false (default) = compact strip, true = full YAML
+  gfx?: 'kitty' | 'halfblock' | 'unicode' | 'none';
 }
 
 let indexRoot: string | null = null;
@@ -83,6 +84,7 @@ export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
     width: ctx.width,
     sourceDir: dirname(abs),
     resolve: getResolver(ctx),
+    gfx: ctx.gfx,
   };
   const { lines, fences, headings } = renderTokens(tokens, rctx);
   const wrapped = wrapLines(lines, ctx.width);
