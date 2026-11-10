@@ -7,6 +7,7 @@ import { parseCallout } from './callouts.js';
 import { fenceLabelLang, highlightAuto, highlightCode } from './highlight.js';
 import { toSuperscript, toSubscript } from './rules-extended.js';
 import { renderLatexToUnicode } from './math.js';
+import { renderInlineImageRows, renderMermaidBlock } from './media.js';
 
 export interface RenderCtx {
   theme: Theme;
@@ -397,14 +398,28 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
       }
       case 'embed': {
         // INV-2.6 — dim ▸ note: label; resolved → clickable, else dim ⚠
+        // Phase 4 (Task 12.2, ADR-034): image embeds ![[diagram.png]] render as Image with inline preview
         const meta = c.meta as { target: string; label: string } | undefined;
         const target = (meta?.target ?? c.content ?? '').split('#')[0];
         const label = meta?.label ?? c.content ?? target;
         const abs = target === '' ? null : rctx.resolve(target);
+        const isImage = /\.(?:png|jpe?g|gif|webp|svg|bmp)$/i.test(target);
         if (abs !== null && existsSync(abs)) {
-          out.push({ text: '\u25b8 note: ' + label, sgr: theme.colors.dim || null, link: { href: abs, kind: 'embed', target, resolved: true } });
+          if (isImage) {
+            const imgLabel = '▣ Image: ' + (label || target) + ' (' + target + ')';
+            out.push({ text: imgLabel, sgr: theme.colors.dim || null, link: { href: abs, kind: 'file', resolved: true } });
+            if (rctx.gfx && rctx.gfx !== 'none') {
+              const rows = renderInlineImageRows(abs, rctx.width, rctx.gfx, theme);
+              for (const r of rows) {
+                out.push({ text: '', sgr: null, br: true });
+                out.push({ text: r, sgr: null });
+              }
+            }
+          } else {
+            out.push({ text: '\u25b8 note: ' + label, sgr: theme.colors.dim || null, link: { href: abs, kind: 'embed', target, resolved: true } });
+          }
         } else {
-          out.push({ text: '\u25b8 note: ' + label, sgr: theme.colors.dim || null });
+          out.push({ text: (isImage ? '▣ Image: ' : '\u25b8 note: ') + label, sgr: theme.colors.dim || null });
           out.push({ text: ' \u26a0', sgr: theme.colors.dim || null });
         }
         break;
@@ -426,6 +441,7 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
       case 'image': {
         // D-3.3 / INV-1.8: ▣ Image: <alt || basename(src)> (<src>)
         // registered as a LinkSpan (kind: 'file' if local path exists, else dim with ⚠)
+        // Phase 4 (Task 12.2, ADR-034): renders inline truecolor halfblock / kitty image rows
         const alt = (c.children ?? []).filter((x) => x.type === 'text').map((x) => x.content).join('');
         const rawSrc = (c.attrs ?? []).find((a) => a[0] === 'src')?.[1] ?? '';
         const src = String(rawSrc);
@@ -434,6 +450,22 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
         const abs = src.startsWith('/') ? src : rctx.resolve(src);
         if (abs !== null && existsSync(abs)) {
           out.push({ text: label, sgr: theme.colors.dim || null, link: { href: abs, kind: 'file', resolved: true } });
+          if (rctx.gfx && rctx.gfx !== 'none') {
+            const rows = renderInlineImageRows(abs, rctx.width, rctx.gfx, theme);
+            for (const r of rows) {
+              out.push({ text: '', sgr: null, br: true });
+              out.push({ text: r, sgr: null });
+            }
+          }
+        } else if (src.startsWith('http://') || src.startsWith('https://')) {
+          out.push({ text: label, sgr: theme.colors.dim || null, link: { href: src, kind: 'http', resolved: true } });
+          if (rctx.gfx && rctx.gfx !== 'none') {
+            const rows = renderInlineImageRows(src, rctx.width, rctx.gfx, theme);
+            for (const r of rows) {
+              out.push({ text: '', sgr: null, br: true });
+              out.push({ text: r, sgr: null });
+            }
+          }
         } else {
           out.push({ text: label, sgr: theme.colors.dim || null });
           out.push({ text: ' \u26a0', sgr: theme.colors.dim || null });
@@ -541,6 +573,13 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
           lineSegs.push({ text: ' '.repeat(rctx.width - totalVis), sgr: codeBg });
         }
         out.push(lineSegs);
+      }
+
+      if (labelLang === 'mermaid' && rctx.gfx === 'kitty') {
+        const mRows = renderMermaidBlock(rawCode, rctx.width, rctx.gfx, rctx.theme);
+        for (const row of mRows) {
+          out.push([{ text: row, sgr: null }]);
+        }
       }
 
       if (fences) {

@@ -12,6 +12,7 @@ import { encodeOsc52, isSshSession } from '../core/clipboard.js';
 import type { DocState, Focus, UiState } from '../core/nav.js';
 import { findMatches, applySearch } from '../core/search.js';
 import { stripAnsi, visibleWidth } from '../core/renderer.js';
+import { detectGfxMode } from '../core/media.js';
 import { collectVisibleLinks, applyLinkHints, resolveHintInput, type HintTarget } from '../core/link-hints.js';
 import DocPane from './DocPane.js';
 import Sidebar from './Sidebar.js';
@@ -30,6 +31,7 @@ export interface AppProps {
   showHidden: boolean;
   showFrontmatter: boolean;
   metaExpanded?: boolean;
+  gfx?: 'kitty' | 'halfblock' | 'unicode' | 'none';
 }
 
 export interface SearchState {
@@ -153,6 +155,7 @@ export default function App({
   showHidden,
   showFrontmatter,
   metaExpanded: initialMetaExpanded,
+  gfx: initialGfx,
 }: AppProps) {
   const [state, setState] = useState<UiState>(() => ({
     stack: [{ abs: doc.source, doc, scrollTop: 0 }],
@@ -167,6 +170,7 @@ export default function App({
   }));
   const [search, setSearch] = useState<SearchState | null>(null);
   const [metaExpanded, setMetaExpanded] = useState<boolean>(initialMetaExpanded ?? false);
+  const [gfxMode, setGfxMode] = useState<'kitty' | 'halfblock' | 'none'>(() => detectGfxMode(process.env, initialGfx));
   const [linkMode, setLinkMode] = useState<{ buf: string } | null>(null);
   const [outlineOpen, setOutlineOpen] = useState<boolean>(false);
   const [outlineCursor, setOutlineCursor] = useState<number>(0);
@@ -190,13 +194,13 @@ export default function App({
   }, [state.themeId]);
 
   const render = (abs: string) =>
-    renderFile(abs, { root, width, theme: themeObj, showFrontmatter, showHidden, metaExpanded });
+    renderFile(abs, { root, width, theme: themeObj, showFrontmatter, showHidden, metaExpanded, gfx: gfxMode });
 
-  // 02 §11 — re-render the doc via renderFile on [abs, width, reloadTick, themeId, metaExpanded]
-  // (INV-3.2: sidebar toggle re-wraps at the new width; INV-3.8: T re-themes; m toggles meta).
+  // 02 §11 — re-render the doc via renderFile on [abs, width, reloadTick, themeId, metaExpanded, gfxMode]
+  // (INV-3.2: sidebar toggle re-wraps at the new width; INV-3.8: T re-themes; m toggles meta; i toggles gfx).
   const docMemo = useMemo(
-    () => renderFile(cur.abs, { root, width, theme: themeObj, showFrontmatter, showHidden, metaExpanded }),
-    [cur.abs, width, state.reloadTick, state.themeId, metaExpanded],
+    () => renderFile(cur.abs, { root, width, theme: themeObj, showFrontmatter, showHidden, metaExpanded, gfx: gfxMode }),
+    [cur.abs, width, state.reloadTick, state.themeId, metaExpanded, gfxMode],
   );
   const entries = useMemo(
     () => listEntries(state.cwd, showHidden, sidebarSort),
@@ -680,6 +684,16 @@ export default function App({
     // Phase 3 (Task 7.4, ADR-027) — m toggles compact frontmatter / full YAML (doc focus).
     if (input === 'm' && state.focus === 'doc') {
       setMetaExpanded((v) => !v);
+      return;
+    }
+    // Phase 4 (Task 12.2, ADR-034) — i cycles image rendering mode (doc focus).
+    if (input === 'i' && state.focus === 'doc') {
+      setGfxMode((curMode) => {
+        const next: 'kitty' | 'halfblock' | 'none' = curMode === 'kitty' ? 'halfblock' : curMode === 'halfblock' ? 'none' : 'kitty';
+        setToast(`images: ${next === 'none' ? 'off' : next}`);
+        setTimeout(() => setToast(null), 2000);
+        return next;
+      });
       return;
     }
     // Phase 3 (Task 8.1, ADR-028) — l enters keyboard link-hint mode (doc focus).

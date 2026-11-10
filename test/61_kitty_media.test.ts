@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   detectGfxMode,
@@ -11,6 +11,8 @@ import {
 } from '../src/core/media.js';
 import { parseArgs } from '../src/core/config.js';
 import { visibleWidth, stripAnsi } from '../src/core/renderer.js';
+import { renderFile } from '../src/core/pipeline.js';
+import { DEFAULT_THEME } from '../src/core/themes.js';
 
 test('detectGfxMode honors environment and overrides', () => {
   assert.equal(detectGfxMode({ NO_COLOR: '1' }), 'none');
@@ -81,4 +83,63 @@ test('createFallbackPng creates a valid PNG buffer', () => {
   assert.ok(Buffer.isBuffer(buf), 'output is buffer');
   const dims = readPngDimensions(buf);
   assert.ok(dims !== null, 'dims of fallback png should be valid');
+});
+
+test('renderFile renders local and embed images in halfblock and kitty modes', () => {
+  const testMdPath = join(process.cwd(), 'test/fixtures/temp_image_test.md');
+  const mdContent = `
+# Media Document
+
+![Sample Diagram](sample-diagram.png)
+
+![[sample-diagram.png]]
+`;
+  writeFileSync(testMdPath, mdContent, 'utf8');
+
+  try {
+    const root = join(process.cwd(), 'test/fixtures');
+
+    // 1. Half-block mode
+    const hbDoc = renderFile(testMdPath, {
+      root,
+      width: 60,
+      theme: DEFAULT_THEME,
+      showFrontmatter: false,
+      gfx: 'halfblock',
+    });
+    const hbText = hbDoc.lines.map((l) => l.text).join('\n');
+    assert.ok(hbText.includes('▣ Image: Sample Diagram'), 'contains image header');
+    assert.ok(hbText.includes('▀'), 'renders halfblock character');
+    assert.ok(hbText.includes('38;2;'), 'contains 24-bit fg truecolor code');
+
+    // 2. Kitty mode
+    const kittyDoc = renderFile(testMdPath, {
+      root,
+      width: 60,
+      theme: DEFAULT_THEME,
+      showFrontmatter: false,
+      gfx: 'kitty',
+    });
+    const kittyText = kittyDoc.lines.map((l) => l.text).join('\n');
+    assert.ok(kittyText.includes('\x1b_G'), 'contains Kitty APC escape sequence');
+    assert.ok(kittyText.includes('a=T,f=100'), 'contains Kitty control params');
+
+    // 3. None mode
+    const noneDoc = renderFile(testMdPath, {
+      root,
+      width: 60,
+      theme: DEFAULT_THEME,
+      showFrontmatter: false,
+      gfx: 'none',
+    });
+    const noneText = noneDoc.lines.map((l) => l.text).join('\n');
+    assert.ok(!noneText.includes('▀'), 'no halfblocks in none mode');
+    assert.ok(!noneText.includes('\x1b_G'), 'no Kitty APC in none mode');
+  } finally {
+    try {
+      unlinkSync(testMdPath);
+    } catch {
+      // ignore
+    }
+  }
 });

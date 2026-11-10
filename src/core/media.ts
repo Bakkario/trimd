@@ -1,6 +1,8 @@
 // 01 §2.1 / D-4.5 (ADR-034) — Terminal Graphics Engine (Kitty APC and Truecolor Half-Block)
 
 import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import type { Theme } from './types.js';
 
 export type GfxMode = 'kitty' | 'halfblock' | 'unicode' | 'none';
 
@@ -147,4 +149,159 @@ export function createFallbackPng(label: string, widthPx = 480, heightPx = 120):
     '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2d420000000049454e44ae426082',
     'hex',
   );
+}
+
+const imageCache = new Map<string, { png: Buffer; width: number; height: number }>();
+
+export function clearImageCache(): void {
+  imageCache.clear();
+}
+
+export function loadImageAsPng(absOrUrl: string, maxW = 640, maxH = 240): { png: Buffer; width: number; height: number } | null {
+  const cached = imageCache.get(absOrUrl);
+  if (cached) return cached;
+
+  if (absOrUrl.startsWith('http://') || absOrUrl.startsWith('https://')) {
+    try {
+      const curl = spawnSync('/usr/bin/curl', ['-sL', '--max-time', '3', '-A', 'trimd/0.3', absOrUrl], {
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 3500,
+      });
+      if (curl.status === 0 && curl.stdout && curl.stdout.length > 0) {
+        const conv = spawnSync('/usr/bin/magick', ['-', '-resize', `${maxW}x${maxH}>`, 'png:-'], {
+          input: curl.stdout,
+          timeout: 2000,
+        });
+        if (conv.status === 0 && conv.stdout && conv.stdout.length > 0) {
+          const dims = readPngDimensions(conv.stdout) ?? { width: maxW, height: maxH };
+          const res = { png: conv.stdout, width: dims.width, height: dims.height };
+          imageCache.set(absOrUrl, res);
+          return res;
+        }
+      }
+    } catch {
+      // fallback below
+    }
+    const fb = createFallbackPng(absOrUrl, maxW, maxH);
+    const dims = readPngDimensions(fb) ?? { width: maxW, height: maxH };
+    const res = { png: fb, width: dims.width, height: dims.height };
+    imageCache.set(absOrUrl, res);
+    return res;
+  }
+
+  // Local file
+  if (existsSync(absOrUrl)) {
+    try {
+      if (absOrUrl.toLowerCase().endsWith('.png')) {
+        const buf = readFileSync(absOrUrl);
+        const dims = readPngDimensions(buf);
+        if (dims && dims.width <= maxW && dims.height <= maxH) {
+          const res = { png: buf, width: dims.width, height: dims.height };
+          imageCache.set(absOrUrl, res);
+          return res;
+        }
+      }
+      const conv = spawnSync('/usr/bin/magick', [absOrUrl, '-resize', `${maxW}x${maxH}>`, 'png:-'], {
+        timeout: 2000,
+      });
+      if (conv.status === 0 && conv.stdout && conv.stdout.length > 0) {
+        const dims = readPngDimensions(conv.stdout) ?? { width: maxW, height: maxH };
+        const res = { png: conv.stdout, width: dims.width, height: dims.height };
+        imageCache.set(absOrUrl, res);
+        return res;
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+export function renderInlineImageRows(absOrUrl: string, width: number, gfx: GfxMode, theme: Theme): string[] {
+  if (gfx === 'none' || theme.id === 'plain') return [];
+  const img = loadImageAsPng(absOrUrl);
+  if (!img) return [];
+
+  const cols = Math.max(16, Math.min(48, width - 6));
+  const rows = 6;
+
+  if (gfx === 'kitty') {
+    return encodeKittyPng(img.png, cols, rows);
+  }
+  return renderHalfBlockImage(img.png, cols, rows, theme.colors.tableBorder);
+}
+
+export function renderMermaidBlock(raw: string, width: number, gfx: GfxMode, theme: Theme): string[] {
+  if (gfx !== 'kitty' || theme.id === 'plain') return [];
+
+  const lines = raw.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('%%') && !l.startsWith('graph ') && !l.startsWith('flowchart '));
+  const nodes = new Map<string, string>();
+  const edges: { from: string; to: string; label?: string }[] = [];
+
+  for (const line of lines) {
+    const edgeMatch = line.match(/([a-zA-Z0-9_-]+)(?:\[([^\]]+)\])?\s*-->?(?:\|([^|]+)\|)?\s*([a-zA-Z0-9_-]+)(?:\[([^\]]+)\])?/);
+    if (edgeMatch) {
+      const fromId = edgeMatch[1];
+      const fromLabel = edgeMatch[2] || fromId;
+      const edgeLabel = edgeMatch[3];
+      const toId = edgeMatch[4];
+      const toLabel = edgeMatch[5] || toId;
+
+      if (!nodes.has(fromId)) nodes.set(fromId, fromLabel);
+      if (!nodes.has(toId)) nodes.set(toId, toLabel);
+      edges.push({ from: fromId, to: toId, label: edgeLabel });
+    }
+  }
+
+  const nodeList = Array.from(nodes.entries());
+  if (nodeList.length === 0) return [];
+
+  const svgW = 440;
+  const svgH = 120;
+  const stepX = Math.floor((svgW - 80) / Math.max(1, nodeList.length));
+
+  const nodeElements = nodeList.map(([id, label], idx) => {
+    const x = 30 + idx * stepX;
+    const y = 40;
+    return `
+      <rect x="${x}" y="${y}" width="70" height="35" rx="5" fill="#24283b" stroke="#7aa2f7" stroke-width="2"/>
+      <text x="${x + 35}" y="${y + 22}" fill="#c0caf5" font-family="sans-serif" font-size="11" text-anchor="middle">${label.replace(/[<>&'"]/g, '')}</text>
+    `;
+  }).join('');
+
+  const edgeElements = edges.map((e) => {
+    const fromIdx = nodeList.findIndex(([id]) => id === e.from);
+    const toIdx = nodeList.findIndex(([id]) => id === e.to);
+    if (fromIdx < 0 || toIdx < 0) return '';
+    const x1 = 30 + fromIdx * stepX + 70;
+    const x2 = 30 + toIdx * stepX;
+    const y = 57;
+    return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="#7aa2f7" stroke-width="2" marker-end="url(#arr)"/>`;
+  }).join('');
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}">
+    <defs>
+      <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#7aa2f7" />
+      </marker>
+    </defs>
+    <rect width="100%" height="100%" fill="#16161e" rx="6"/>
+    ${edgeElements}
+    ${nodeElements}
+  </svg>`;
+
+  try {
+    const res = spawnSync('/usr/bin/magick', ['svg:-', 'png:-'], {
+      input: Buffer.from(svg, 'utf8'),
+      timeout: 1500,
+    });
+    if (res.status === 0 && res.stdout && res.stdout.length > 0) {
+      const cols = Math.max(16, Math.min(48, width - 6));
+      return encodeKittyPng(res.stdout, cols, 6);
+    }
+  } catch {
+    // fallback
+  }
+  return [];
 }

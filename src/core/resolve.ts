@@ -17,6 +17,7 @@ export function stemOf(name: string): string {
 }
 
 const MD_RE = /\.mdx?$/i;
+const ASSET_RE = /\.(?:mdx?|markdown|png|jpe?g|gif|webp|svg|bmp)$/i;
 
 function skipDir(name: string, showHidden: boolean): boolean {
   if (name === '.obsidian' || name === '.git') return true;
@@ -38,7 +39,7 @@ function walk(dir: string, level: number, showHidden: boolean, emit: (abs: strin
     const abs = join(dir, d.name);
     if (d.isDirectory()) {
       walk(abs, level + 1, showHidden, emit);
-    } else if (d.isFile() && MD_RE.test(d.name)) {
+    } else if (d.isFile() && ASSET_RE.test(d.name)) {
       emit(abs);
     }
   }
@@ -191,6 +192,7 @@ export function buildBacklinkIndex(root: string, idx: RootIndex): Map<string, st
   const sourceFiles = new Set<string>(idx.exact.values());
 
   for (const sourceAbs of sourceFiles) {
+    if (!MD_RE.test(sourceAbs)) continue;
     let content = '';
     try {
       content = readFileSync(sourceAbs, 'utf8');

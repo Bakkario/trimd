@@ -96,9 +96,10 @@ try {
     theme,
     showFrontmatter,
     showHidden,
+    gfx: merged.gfx,
   });
 } catch (err) {
   fail(err, !!flags.debug);
 }
 
-render(<App doc={doc} root={root} theme={theme} themeId={theme.id} sidebarOpen={sidebarOpen} showHidden={showHidden} showFrontmatter={showFrontmatter} />);
+render(<App doc={doc} root={root} theme={theme} themeId={theme.id} sidebarOpen={sidebarOpen} showHidden={showHidden} showFrontmatter={showFrontmatter} gfx={merged.gfx} />);
