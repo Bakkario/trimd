@@ -1,7 +1,7 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { basename, relative } from 'node:path';
-import type { MouseEvt, RenderedDoc, Theme } from '../core/types.js';
+import type { LinkSpan, MouseEvt, RenderedDoc, Theme } from '../core/types.js';
 import { paint, allThemeIds, BUILTIN_THEMES, loadUserTheme } from '../core/themes.js';
 import { renderFile } from '../core/pipeline.js';
 import { listEntries, detectGitModified, clearGitCache, buildIndex, buildBacklinkIndex } from '../core/resolve.js';
@@ -13,6 +13,7 @@ import type { DocState, Focus, UiState } from '../core/nav.js';
 import { findMatches, applySearch } from '../core/search.js';
 import { stripAnsi, visibleWidth } from '../core/renderer.js';
 import { detectGfxMode } from '../core/media.js';
+import { buildModalBox } from '../core/overlay.js';
 import { collectVisibleLinks, applyLinkHints, resolveHintInput, type HintTarget } from '../core/link-hints.js';
 import DocPane from './DocPane.js';
 import Sidebar from './Sidebar.js';
@@ -174,6 +175,7 @@ export default function App({
   const [linkMode, setLinkMode] = useState<{ buf: string } | null>(null);
   const [outlineOpen, setOutlineOpen] = useState<boolean>(false);
   const [outlineCursor, setOutlineCursor] = useState<number>(0);
+  const [peekTarget, setPeekTarget] = useState<{ href: string; previewLines: string[] } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [sidebarSort, setSidebarSort] = useState<'name' | 'mtime'>('name');
   const cur = state.stack[state.cur];
@@ -613,6 +615,21 @@ export default function App({
       return;
     }
 
+    // Task 13.1 (D-4.6) — Wikilink Peek modal keyboard handling
+    if (peekTarget) {
+      if (key.escape || input === 'p') {
+        setPeekTarget(null);
+        return;
+      }
+      if (key.return) {
+        const targetHref = peekTarget.href;
+        setPeekTarget(null);
+        setState((st) => ({ ...navOpen(st, targetHref, render), focus: 'doc' }));
+        return;
+      }
+      return;
+    }
+
     // Phase 3 (Task 9.2, ADR-030) — Outline mode keyboard handling
     if (outlineOpen) {
       if (key.escape || input === 'o') {
@@ -726,6 +743,45 @@ export default function App({
         }
         setOutlineCursor(nearestIdx);
         setOutlineOpen(true);
+      }
+      return;
+    }
+    // Task 13.1 (D-4.6) — p toggles Wikilink Peek (doc focus).
+    if (input === 'p' && state.focus === 'doc' && !search?.rowOpen && !outlineOpen) {
+      if (peekTarget) {
+        setPeekTarget(null);
+        return;
+      }
+      const visibleLines = activeDocMemo.lines.slice(scrollTop, scrollTop + contentRows);
+      let targetSpan: LinkSpan | null = null;
+      for (const line of visibleLines) {
+        for (const span of line.links) {
+          if (
+            (span.kind === 'wikilink' || span.kind === 'file' || span.kind === 'embed') &&
+            span.href &&
+            span.resolved !== false &&
+            !span.href.startsWith('http://') &&
+            !span.href.startsWith('https://')
+          ) {
+            targetSpan = span;
+            break;
+          }
+        }
+        if (targetSpan) break;
+      }
+      if (!targetSpan) {
+        setToast('no link in view to peek');
+        setTimeout(() => setToast(null), 2000);
+      } else {
+        const modalW = Math.min(44, Math.max(34, width - 4));
+        const targetDoc = renderFile(targetSpan.href, {
+          root,
+          width: modalW - 4,
+          theme: themeObj,
+          showFrontmatter: true,
+        });
+        const previewLines = targetDoc.lines.slice(0, 8).map((l) => l.text);
+        setPeekTarget({ href: targetSpan.href, previewLines });
       }
       return;
     }
@@ -892,6 +948,50 @@ export default function App({
   }
   const paintedTopBar = paintBarRow(topBarContent, columns, themeObj.colors.headerBg);
 
+  const modalW = Math.min(44, Math.max(34, width - 4));
+  const overlay = useMemo(() => {
+    if (peekTarget) {
+      const peekRows = buildModalBox(
+        'Peek: ' + basename(peekTarget.href),
+        peekTarget.previewLines,
+        '⏎ open · p/Esc close',
+        modalW,
+        themeObj,
+      );
+      return {
+        rows: peekRows,
+        startRow: 1,
+        startCol: Math.max(2, width + 5 - modalW - 2),
+      };
+    }
+    if (outlineOpen) {
+      const maxOutlineItems = Math.max(1, contentRows - 4);
+      const outlineLines = (activeDocMemo.headings ?? []).slice(0, maxOutlineItems).map((h, i) => {
+        const isSelected = i === outlineCursor;
+        const indent = '  '.repeat(Math.max(0, h.level - 1));
+        const numBadge = i < 9 ? `[${i + 1}] ` : '    ';
+        const lineInfo = ` (L${h.line + 1})`;
+        const rowContent = `${indent}${numBadge}${h.text}${lineInfo}`;
+        return isSelected
+          ? '\x1b[7m' + rowContent + '\x1b[27m'
+          : (i < 9 ? indent + paint(themeObj, 'linkHint', `[${i + 1}] `) + h.text + paint(themeObj, 'dim', lineInfo) : rowContent);
+      });
+      const outlineModalRows = buildModalBox(
+        'Outline (o)',
+        outlineLines,
+        '↑↓ jump · ⏎ go · Esc',
+        modalW,
+        themeObj,
+      );
+      return {
+        rows: outlineModalRows,
+        startRow: 1,
+        startCol: Math.max(2, width + 5 - modalW - 2),
+      };
+    }
+    return undefined;
+  }, [peekTarget, outlineOpen, activeDocMemo.headings, outlineCursor, contentRows, modalW, themeObj, width]);
+
   return (
     <Box flexDirection="column" width="100%" height={terminalRows}>
       {state.help
@@ -945,35 +1045,21 @@ export default function App({
                   ))}
                 </Box>
               )}
-              {outlineOpen ? (
-                <Box flexDirection="column" width={width + 5} height={contentRows}>
-                  <Box flexDirection="row">
-                    <Text>{'  ' + paint(themeObj, 'heading1', '── Outline ──') + paint(themeObj, 'dim', ' (↑↓ move · Enter/1-9 jump · Esc/o close)')}</Text>
-                  </Box>
-                  {(activeDocMemo.headings ?? []).slice(0, contentRows - 1).map((h, i) => {
-                    const isSelected = i === outlineCursor;
-                    const indent = '  '.repeat(Math.max(1, h.level));
-                    const numBadge = i < 9 ? `[${i + 1}] ` : '    ';
-                    const lineInfo = ` (L${h.line + 1})`;
-                    const rowContent = `${indent}${numBadge}${h.text}${lineInfo}`;
-                    const styled = isSelected
-                      ? '\x1b[7m' + rowContent + '\x1b[27m'
-                      : (i < 9 ? indent + paint(themeObj, 'linkHint', `[${i + 1}] `) + h.text + paint(themeObj, 'dim', lineInfo) : rowContent);
-                    return (
-                      <Text key={i} wrap="truncate">
-                        {styled}
-                      </Text>
-                    );
-                  })}
-                </Box>
-              ) : displayDoc.lines.length === 0 ? (
+              {displayDoc.lines.length === 0 ? (
                 // R-4 (ISSUE-013) — an empty doc renders one dim row in
                 // place of the (theme-free) DocPane.
                 <Box flexDirection="column" width={width + 5}>
                   <Text>{'  ' + paint(themeObj, 'dim', '(empty document)')}</Text>
                 </Box>
               ) : (
-                <DocPane doc={displayDoc} scrollTop={scrollTop} rows={contentRows} width={width} theme={themeObj} />
+                <DocPane
+                  doc={displayDoc}
+                  scrollTop={scrollTop}
+                  rows={contentRows}
+                  width={width}
+                  theme={themeObj}
+                  overlay={overlay}
+                />
               )}
             </Box>
           </>

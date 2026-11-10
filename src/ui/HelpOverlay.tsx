@@ -16,7 +16,10 @@ const ROWS: Array<[string, string]> = [
   ['n N', 'next / previous search match'],
   ['l', 'keyboard link-hints mode (doc focus)'],
   ['o', 'document outline / jump to heading (doc focus)'],
+  ['p', 'peek link target under view (doc focus)'],
   ['m', 'toggle frontmatter YAML / compact (doc focus)'],
+  ['i', 'cycle image rendering mode (doc focus)'],
+  ['s', 'sort sidebar by name / mtime (sidebar focus)'],
   ['?', 'help (any key closes)'],
 ];
 
