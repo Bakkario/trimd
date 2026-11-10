@@ -28,8 +28,8 @@ const EXPECTED_COLORS = [
   'headerBg', 'accentPill', 'codeBg', 'calloutBg', 'tagChip', 'linkHint', 'activeDoc', 'scrollbar',
 ];
 
-test('three built-ins, 41 colors each (Phase 3 Task 6.1)', () => {
-  assert.equal(Object.keys(BUILTIN_THEMES).length, 3);
+test('four built-ins, 41 colors each (Phase 3 Task 6.1, 13.2)', () => {
+  assert.equal(Object.keys(BUILTIN_THEMES).length, 4);
   const phase3Slots = ['headerBg', 'accentPill', 'codeBg', 'calloutBg', 'tagChip', 'linkHint', 'activeDoc', 'scrollbar'] as const;
   for (const t of Object.values(BUILTIN_THEMES) as Theme[]) {
     assert.deepEqual(Object.keys(t.colors).sort(), [...EXPECTED_COLORS].sort());
@@ -95,7 +95,7 @@ test('allThemeIds: built-ins first, then user themes', () => {
   fs.writeFileSync(file, JSON.stringify({ id: 'user-a', colors: {} }));
   try {
     const ids = allThemeIds();
-    assert.equal(ids.slice(0, 3).join(','), 'default,light,dracula');
+    assert.equal(ids.slice(0, 4).join(','), 'default,light,dracula,tokyo-night');
     assert.ok(ids.includes('user-a'));
   } finally {
     fs.rmSync(file, { force: true });

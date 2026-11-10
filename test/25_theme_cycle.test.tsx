@@ -90,7 +90,7 @@ test('nextTheme cycles allThemeIds() from a temp dir, wrapping back to default (
     }));
     process.env.XDG_CONFIG_HOME = tmp;
 
-    assert.deepEqual(allThemeIds(), ['default', 'light', 'dracula', 'night'], 'builtins first, then user ids');
+    assert.deepEqual(allThemeIds(), ['default', 'light', 'dracula', 'tokyo-night', 'night'], 'builtins first, then user ids');
 
     let st = initialState('default');
     st = nextTheme(st, allThemeIds());
@@ -98,7 +98,9 @@ test('nextTheme cycles allThemeIds() from a temp dir, wrapping back to default (
     st = nextTheme(st, allThemeIds());
     assert.equal(st.themeId, 'dracula', 'light → dracula');
     st = nextTheme(st, allThemeIds());
-    assert.equal(st.themeId, 'night', 'dracula → night (user theme)');
+    assert.equal(st.themeId, 'tokyo-night', 'dracula → tokyo-night');
+    st = nextTheme(st, allThemeIds());
+    assert.equal(st.themeId, 'night', 'tokyo-night → night (user theme)');
     st = nextTheme(st, allThemeIds());
     assert.equal(st.themeId, 'default', 'night → default (wrap-around)');
   } finally {

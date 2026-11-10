@@ -288,6 +288,7 @@ export default function App({
     searchRowOpen: search?.rowOpen,
     sidebarScrollTop,
     docWidth: width,
+    terminalCols: stdout.columns || 80,
   });
   view.current = {
     state,
@@ -298,7 +299,16 @@ export default function App({
     searchRowOpen: search?.rowOpen,
     sidebarScrollTop,
     docWidth: width,
+    terminalCols: stdout.columns || 80,
   };
+
+  // Task 13.2 (R-16) — OSC 2 Terminal Title
+  useEffect(() => {
+    if (themeObj.id !== 'plain') {
+      const title = cur.doc.title || basename(cur.abs);
+      process.stdout.write(`\x1b]2;Trimd — ${title}\x07`);
+    }
+  }, [cur.abs, cur.doc.title, themeObj.id]);
 
   useEffect(() => {
     process.stdout.write(MOUSE_ENABLE);
@@ -374,6 +384,25 @@ export default function App({
       // ADR-023 (ISSUE-010) — the separator column (x === 30, sidebar open)
       // is a no-op.
       if (st.sidebarOpen && e.x === 30) return;
+
+      // Task 13.2 (R-13) — Scrollbar click-to-position: clicking on far-right scrollbar column jumps scrollTop proportionally
+      const terminalCols = view.current.terminalCols;
+      if (e.x >= terminalCols - 2 && e.y >= 1 && e.y <= crows) {
+        const totalLines = doc.lines.length;
+        const maxT = Math.max(0, totalLines - crows);
+        if (maxT > 0) {
+          const ratio = (e.y - 1) / Math.max(1, crows - 1);
+          const nextTop = Math.round(ratio * maxT);
+          setState((s) => {
+            const stack = s.stack.slice();
+            stack[s.cur] = { ...stack[s.cur], scrollTop: nextTop };
+            return { ...s, stack, focus: 'doc' };
+          });
+        } else {
+          if (st.focus !== 'doc') setState((s) => ({ ...s, focus: 'doc' }));
+        }
+        return;
+      }
       // Doc pane starts at terminal column 31 when the sidebar is open
       // (30-col sidebar + 1-col separator). D-3.2 (ADR-026): 2-space left gutter,
       // prose width, 2-space right gutter, 1-col scrollbar.
