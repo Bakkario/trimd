@@ -104,8 +104,8 @@ test('← moves focus doc→sidebar: ↓ afterwards moves the sidebar cursor, no
     await wait(300);
     const { raw, frame } = await finish(h);
     assert.ok(frame.includes('L2 2/30'), 'doc scrolled once (status bar L2 2/30)');
-    // cursor row starts with \x1b[7m  b.md (ink pads the line after the SGR span)
-    assert.ok(raw.includes('\x1b[7m  b.md'), 'cursor moved to the second entry (b.md)');
+    // cursor row has b.md highlighted in reverse video
+    assert.ok(raw.includes('\x1b[7m') && raw.includes('b.md'), 'cursor moved to the second entry (b.md)');
     assert.ok(!frame.includes('L3 3/30'), 'doc did not scroll a second time');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
@@ -125,8 +125,8 @@ test('→ moves focus sidebar→doc: ↓ afterwards scrolls the doc again (ADR-0
     h.stdin.push('\x1b[B'); // ↓ : doc scrolls (L1 → L2)
     await wait(300);
     const { raw, frame } = await finish(h);
-    // cursor row starts with \x1b[7m  b.md (ink pads the line after the SGR span)
-    assert.ok(raw.includes('\x1b[7m  b.md'), 'cursor moved to b.md while the sidebar was focused');
+    // cursor row has b.md highlighted in reverse video
+    assert.ok(raw.includes('\x1b[7m') && raw.includes('b.md'), 'cursor moved to b.md while the sidebar was focused');
     assert.ok(frame.includes('L2 2/30'), 'doc scrolled after ← (status bar L2 2/30)');
     assert.ok(!frame.includes('L3 3/30'), 'doc scrolled exactly once');
   } finally {

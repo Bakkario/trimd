@@ -304,13 +304,20 @@ export default function App({
       const rowY = e.y - 1 - searchOffset;
       if (rowY < 0) return;
       if (st.sidebarOpen && e.x < 30) {
-        // INV-3.6 (am. ISSUE-003) — mouseup in the sidebar region focuses
+        // INV-3.6 (am. ISSUE-003, ADR-031) — mouseup in the sidebar region focuses
         // the sidebar; if the row carries an entry, it is opened.
         // ISSUE-006 — when shown (cwd ≠ root) content row 0 is the `..`
         // back row (one level up); entry rows are offset by 1.
         // ISSUE-017 — apply sidebarScrollTop to rowY.
+        // ADR-031 — top frame rows offset (3 when crows >= 8, 1 otherwise).
         const showBack = st.cwd !== root;
-        const absRow = rowY + view.current.sidebarScrollTop;
+        const topFrameRows = crows >= 8 ? 3 : 1;
+        const entryRowY = rowY - topFrameRows;
+        if (entryRowY < 0) {
+          if (st.focus !== 'sidebar') setState((s) => ({ ...s, focus: 'sidebar' }));
+          return;
+        }
+        const absRow = entryRowY + view.current.sidebarScrollTop;
         if (showBack && absRow === 0) {
           setState((s) => ({ ...navUp(s, root, showHidden), focus: 'sidebar' }));
           return;
@@ -866,12 +873,14 @@ export default function App({
                   totalDirs={totalDirs}
                   totalNotes={totalNotes}
                   theme={themeObj}
+                  focused={state.focus === 'sidebar'}
+                  cwdLabel={state.cwd === root ? (basename(root) || 'vault') : (relative(root, state.cwd) || basename(state.cwd))}
                 />
               )}
               {state.sidebarOpen && (
                 <Box flexDirection="column" width={1} height={contentRows}>
                   {Array.from({ length: contentRows }, (_, i) => (
-                    <Text key={i}>{paint(themeObj, 'dim', '│')}</Text>
+                    <Text key={i}>{' '}</Text>
                   ))}
                 </Box>
               )}

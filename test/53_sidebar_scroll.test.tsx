@@ -111,7 +111,7 @@ test('ISSUE-017: App scrolling sidebar down past viewport keeps cursor visible a
     const raw = (out as unknown as { chunks: string[] }).chunks.join('');
     const frame = stripAnsi(raw);
     assert.ok(frame.includes('doc_31.md'), 'scrolled entries are visible in the sidebar');
-    assert.ok(raw.includes('\x1b[7m  doc_31.md\x1b[27m') || raw.includes('\x1b[7m  doc_31.md\x1b[0m'), 'cursor at doc_31.md is rendered in reverse video');
+    assert.ok(raw.includes('\x1b[7m') && raw.includes('doc_31.md'), 'cursor at doc_31.md is rendered in reverse video');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

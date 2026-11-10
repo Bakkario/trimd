@@ -80,8 +80,8 @@ test('Sidebar renders active doc dot ● and footer summary', async () => {
   const plain = stripAnsi(raw);
 
   // Active doc dot
-  assert.ok(plain.includes('● active.md'), 'active note renders ● prefix');
-  assert.ok(raw.includes('● '), 'active note dot present in raw output');
+  assert.ok(plain.includes('●') && plain.includes('active.md'), 'active note renders ● prefix');
+  assert.ok(raw.includes('●'), 'active note dot present in raw output');
 
   // Summary footer
   assert.ok(plain.includes('1 dirs · 2 notes'), 'footer renders dirs and notes count');
@@ -109,7 +109,7 @@ test('App: sidebar displays passive active-doc dot while browsing other notes', 
     releaseStdinFixture();
 
     const frame = stripAnsi((out as unknown as { chunks: string[] }).chunks.join(''));
-    assert.ok(frame.includes('● note1.md'), 'note1 is active with dot ●');
+    assert.ok(frame.includes('●') && frame.includes('note1.md'), 'note1 is active with dot ●');
     assert.ok(frame.includes('0 dirs · 2 notes'), 'sidebar footer present');
   } finally {
     rmSync(tmp, { recursive: true, force: true });

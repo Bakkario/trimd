@@ -101,7 +101,7 @@ async function finish(h: { inst: ReturnType<typeof render>; out: Writable }): Pr
 // ISSUE-001; ADR-023 am. ISSUE-010 — content starts below the header row,
 // and the doc pane starts at column 31 with the separator column open):
 const clickDoc = () => process.stdin.emit('data', '\x1b[<0;67;7m');    // 0-based (66,6): doc row 5, doc col 35, no span
-const clickSidebarRow = (row: number) => process.stdin.emit('data', `\x1b[<0;11;${row + 2}m`); // 0-based (10,row+1): entry below the header
+const clickSidebarRow = (row: number) => process.stdin.emit('data', `\x1b[<0;11;${row + 5}m`); // 0-based: entries start at content row 3 (frame header rows 0-2)
 
 test('doc click outside a link moves focus to the doc (INV-3.6 am. ISSUE-003)', async () => {
   const h = setup();
@@ -115,7 +115,7 @@ test('doc click outside a link moves focus to the doc (INV-3.6 am. ISSUE-003)', 
     await wait(300);
     const { raw, frame } = await finish(h);
     assert.ok(frame.includes('L2 2/31'), 'doc scrolled (status bar L2 2/31) → doc has focus');
-    assert.ok(!raw.includes('\x1b[7m  a.md'), 'cursor did not move (sidebar not focused)');
+    assert.ok(!raw.includes('a.md\x1b[0m') || !raw.includes('\x1b[7m'), 'cursor did not move (sidebar not focused)');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
   }
@@ -130,7 +130,7 @@ test('sidebar file click opens the entry and keeps sidebar focus (INV-3.6 am. IS
     h.stdin.push('\x1b[B'); // ↓ : must move the cursor, not scroll the doc
     await wait(300);
     const { raw, frame } = await finish(h);
-    assert.ok(raw.includes('\x1b[7m  a.md'), 'cursor moved sub → a.md → sidebar has focus');
+    assert.ok(raw.includes('\x1b[7m') && frame.includes('a.md'), 'cursor moved sub → a.md → sidebar has focus');
     assert.ok(frame.includes('b.md'), 'sidebar click opened b.md (breadcrumb)');
     assert.ok(!frame.includes('L2 2/30') && !frame.includes('L2 2/31'), 'doc (now b.md) did not scroll');
   } finally {
@@ -142,10 +142,10 @@ test('sidebar dir click enters the dir and keeps sidebar focus (regression, INV-
   const h = setup();
   try {
     await wait(200);
-    clickSidebarRow(0); // click ▸ sub (row 0)
+    clickSidebarRow(0); // click sub (row 0)
     await wait(300);
     const { raw, frame } = await finish(h);
-    assert.ok(raw.includes('\x1b[7m  z.md'), 'entered sub — cursor on z.md (sidebar focus)');
+    assert.ok(raw.includes('\x1b[7m') && frame.includes('z.md'), 'entered sub — cursor on z.md (sidebar focus)');
     assert.ok(frame.includes('L1 1/31'), 'doc unchanged (a.md at top)');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });

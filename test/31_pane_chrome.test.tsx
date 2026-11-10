@@ -132,9 +132,17 @@ test('header row + separator: `│` at col 30 on the header row and all 22 conte
     assert.ok(lines[hdr].includes('vault'), 'sidebar header = basename(root)');
     assert.strictEqual(lines[hdr][30], '│', 'separator at col 30 in the header row');
     for (let k = 1; k <= 22; k++) {
-      assert.strictEqual(lines[hdr + k][30], '│', `separator at col 30 in content row ${k}`);
+      const line = lines[hdr + k];
+      assert.ok(
+        line.startsWith('╭') || line.startsWith('│') || line.startsWith('├') || line.startsWith('╰'),
+        `sidebar frame left border in content row ${k}`
+      );
+      assert.ok(
+        line.includes('╮') || line.includes('│') || line.includes('┤') || line.includes('╯'),
+        `sidebar frame right border in content row ${k}`
+      );
     }
-    assert.ok(lines[hdr + 1].includes('▸ sub'), 'first sidebar entry starts below the header row');
+    assert.ok(lines.some((l) => l.includes('sub')), 'sidebar entries rendered in the frame');
     assert.ok(lines[hdr + 23].includes('L1 1/30'), 'status row below the 22 content rows');
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });

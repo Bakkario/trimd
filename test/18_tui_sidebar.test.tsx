@@ -16,7 +16,7 @@ function stripAnsi(s: string): string {
     .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
 }
 
-test('Sidebar: dirs carry ▸, cursor line is reverse video, files have no ▸ (02 §11, INV-3.4)', async () => {
+test('Sidebar: dirs carry 📁, cursor line is reverse video, files have no 📁 (02 §11, INV-3.4)', async () => {
   const entries: DirEntry[] = [
     { name: 'zeta', isDir: true, abs: '/x/zeta' },
     { name: 'Alpha', isDir: true, abs: '/x/Alpha' },
@@ -48,11 +48,11 @@ test('Sidebar: dirs carry ▸, cursor line is reverse video, files have no ▸ (
   const raw = chunks.join('');
   assert.ok(raw.includes('\x1b[7m'), 'cursor line wrapped in reverse video');
   const frame = stripAnsi(raw);
-  assert.ok(frame.includes('▸ zeta'), 'dir entry rendered with ▸ prefix');
-  assert.ok(frame.includes('▸ Alpha'), 'dir entry rendered with ▸ prefix');
+  assert.ok(frame.includes('📁 zeta') || frame.includes('📂 zeta'), 'dir entry rendered with folder icon');
+  assert.ok(frame.includes('📁 Alpha') || frame.includes('📂 Alpha'), 'dir entry rendered with folder icon');
   const betaLine = frame.split('\n').find((l) => l.includes('beta.md'));
   assert.ok(betaLine !== undefined, 'file entry rendered');
-  assert.ok(!betaLine!.includes('▸'), 'file entry has no ▸ prefix');
+  assert.ok(!betaLine!.includes('📁') && !betaLine!.includes('📂'), 'file entry has no folder icon');
 });
 
 test('listEntries: dirs first, case-insensitive sort, md-only files, dot rules (02 §9)', () => {
