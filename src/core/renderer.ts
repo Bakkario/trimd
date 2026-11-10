@@ -6,6 +6,7 @@ import type { FenceBlock, HeadingEntry, LinkSpan, RenderedLine, Theme, ThemeColo
 import { parseCallout } from './callouts.js';
 import { fenceLabelLang, highlightAuto, highlightCode } from './highlight.js';
 import { toSuperscript, toSubscript } from './rules-extended.js';
+import { renderLatexToUnicode } from './math.js';
 
 export interface RenderCtx {
   theme: Theme;
@@ -437,6 +438,12 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
       case 'html_inline':
         // task-lists plugin checkbox — rendered from list_item meta instead
         break;
+      case 'math_inline': {
+        const rendered = renderLatexToUnicode(c.content);
+        const sgr = theme.colors.info || theme.colors.inlineCode || null;
+        out.push({ text: rendered, sgr });
+        break;
+      }
       default:
         if (c.content) out.push({ text: c.content, sgr: null });
         break;
@@ -497,8 +504,9 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
       const rawCode = t.content.endsWith('\n') ? t.content.slice(0, -1) : t.content;
       const codeLines = rawCode.split('\n');
 
+      const displayCode = labelLang === 'math' ? renderLatexToUnicode(rawCode) : rawCode;
       const codeStr = labelLang === 'math'
-        ? highlightCode(rawCode, null)
+        ? highlightCode(displayCode, null)
         : labelLang === 'code'
           ? highlightAuto(rawCode)
           : highlightCode(rawCode, labelLang);
