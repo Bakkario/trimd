@@ -5,7 +5,7 @@ import type { FrontmatterMeta, RenderedDoc, Theme } from './types.js';
 import { FileError, FileMissingError } from './types.js';
 import { extractFrontmatter, renderMeta, renderMetaCompact } from './frontmatter.js';
 import { parseTokens } from './parse.js';
-import { renderTokens, wrapLines, type RenderCtx } from './renderer.js';
+import { renderTokens, visibleWidth, wrapLines, type RenderCtx } from './renderer.js';
 import { buildBacklinkIndex, buildIndex, makeResolver, type RootIndex } from './resolve.js';
 import { paint } from './themes.js';
 
@@ -124,7 +124,8 @@ export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
       const label = `↩ ${noteBase}`;
       const styledLabel = paint(ctx.theme, 'link', label);
       // Check if adding exceeds width
-      if (currentSpans.length > 0 && (visible(currentLine).length + label.length + 2) > ctx.width) {
+      const labelW = visibleWidth(label);
+      if (currentSpans.length > 0 && (visibleWidth(currentLine) + labelW + 2) > ctx.width) {
         outLines.push({ text: currentLine, links: currentSpans });
         currentLine = '  ';
         currentSpans = [];
@@ -132,10 +133,10 @@ export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
         currentLine += '  ';
       }
 
-      const startCol = visible(currentLine).length;
+      const startCol = visibleWidth(currentLine);
       const osc8 = `\x1b]8;url=file://${srcAbs}\x1b\\${styledLabel}\x1b]8;;\x1b\\`;
       currentLine += osc8;
-      const endCol = startCol + label.length;
+      const endCol = startCol + labelW;
 
       currentSpans.push({
         line: outLines.length,

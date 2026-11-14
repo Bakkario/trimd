@@ -345,10 +345,11 @@ export default function App({
 
       if (e.action !== 'release' || e.button !== 0) return;
       const { state: st, doc, scrollTop: top, render: renderNow, contentRows: crows, searchRowOpen } = view.current;
-      // ADR-023 (ISSUE-010) — the status row (and anything below it) is not
-      // clickable.
+      // ADR-023 (ISSUE-010, ISSUE-025) — Row 0 is the header bar, rows 1..searchOffset
+      // is the search input, content spans `crows` rows (e.y = 1+searchOffset .. crows+searchOffset),
+      // and the status row (1 + crows + searchOffset) and anything below it is not clickable.
       const searchOffset = searchRowOpen ? 1 : 0;
-      if (e.y >= crows + searchOffset) return;
+      if (e.y >= 1 + crows + searchOffset) return;
       // ADR-023 — content starts below the header row (and search row if open);
       // clicks on header row or search input row are no-ops.
       if (searchRowOpen && e.y === 1) return;
@@ -393,11 +394,11 @@ export default function App({
 
       // Task 13.2 (R-13) — Scrollbar click-to-position: clicking on far-right scrollbar column jumps scrollTop proportionally
       const terminalCols = view.current.terminalCols;
-      if (e.x >= terminalCols - 2 && e.y >= 1 && e.y <= crows) {
+      if (e.x >= terminalCols - 2 && rowY >= 0 && rowY < crows) {
         const totalLines = doc.lines.length;
         const maxT = Math.max(0, totalLines - crows);
         if (maxT > 0) {
-          const ratio = (e.y - 1) / Math.max(1, crows - 1);
+          const ratio = rowY / Math.max(1, crows - 1);
           const nextTop = Math.round(ratio * maxT);
           setState((s) => {
             const stack = s.stack.slice();
