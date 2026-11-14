@@ -175,6 +175,28 @@ export function detectGitModified(root: string): ReadonlySet<string> {
   return result;
 }
 
+const gitBranchCache = new Map<string, string | null>();
+
+export function detectGitBranch(root: string): string | null {
+  const cached = gitBranchCache.get(root);
+  if (cached !== undefined) return cached;
+  let branch: string | null = null;
+  try {
+    const res = spawnSync('git', ['-C', root, 'rev-parse', '--abbrev-ref', 'HEAD'], {
+      encoding: 'utf8',
+      timeout: 300,
+    });
+    if (res.status === 0 && res.stdout) {
+      const b = res.stdout.trim();
+      if (b && b !== 'HEAD') branch = b;
+    }
+  } catch {
+    // fail-safe
+  }
+  gitBranchCache.set(root, branch);
+  return branch;
+}
+
 // Phase 3 (Task 9.2, ADR-030) — read-only backlink index cached per root.
 // targetAbs → sorted unique array of sourceAbs files that link to targetAbs via [[wikilink]].
 const backlinkCache = new Map<string, Map<string, string[]>>();
