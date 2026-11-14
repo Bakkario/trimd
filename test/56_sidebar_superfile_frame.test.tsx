@@ -86,7 +86,8 @@ test('Sidebar renders ╭, │, ╰, ╯ rounded box frame and Superfile bottom 
   assert.ok(plain.includes('📂 docs') || plain.includes('📁 docs'), 'folder renders 📁/📂 icon');
   assert.ok(plain.includes('📘 README.md'), 'README.md renders 📘 icon');
   assert.ok(plain.includes('📐 SCHEMA.md'), 'SCHEMA.md renders 📐 icon');
-  assert.ok(plain.includes('● 📝 note.md'), 'active note renders ● 📝 icon');
+  assert.ok(plain.includes('📄 note.md'), 'active note renders 📄 icon without ● dot');
+  assert.ok(raw.includes('38;5;51'), 'active note styled with activeDoc color');
 
   // Bottom border embeds dirs · and notes inside ╰─┤ ... ├─╯
   assert.ok(plain.includes('╰─┤ 1 dirs · 3 notes'), 'bottom border embeds dirs and notes inside ╰─┤ ... ├─╯');

@@ -45,6 +45,12 @@ function fit(str: string, maxW: number): string {
   return pad > 0 ? s + ' '.repeat(pad) : s;
 }
 
+function applyCursorHighlight(rawCell: string): string {
+  // Wrap in inverse video (\x1b[7m) and ensure any inner SGR resets (\x1b[0m) re-assert \x1b[7m
+  // so the highlight extends across the entire width of the line to the right border.
+  return `\x1b[7m${rawCell.replace(/\x1b\[0m/g, '\x1b[0m\x1b[7m')}\x1b[0m`;
+}
+
 export function getEntryIcon(
   e: DirEntry,
   isAct: boolean,
@@ -59,20 +65,24 @@ export function getEntryIcon(
     const icon = isCursor ? set.dirOpen : set.dir;
     return paintIcon('info', icon);
   }
-  if (isAct) {
+  // If active and custom theme specified a non-empty set.active, honor it
+  if (isAct && set.active) {
     return paintIcon('activeDoc', set.active);
   }
   const n = e.name.toLowerCase();
+  let icon = set.file;
+  let colorKey: keyof ThemeColors = 'sidebar';
   if (n === 'readme.md' || n === 'index.md') {
-    return paintIcon('heading2', set.readme);
+    icon = set.readme;
+    colorKey = 'heading2';
+  } else if (n.includes('schema') || n.includes('adr') || n.includes('architecture') || n.includes('charter')) {
+    icon = set.spec;
+    colorKey = 'warning';
+  } else if (n.includes('log') || n.includes('tracker') || n.includes('task') || n.includes('roadmap')) {
+    icon = set.task;
+    colorKey = 'tag';
   }
-  if (n.includes('schema') || n.includes('adr') || n.includes('architecture') || n.includes('charter')) {
-    return paintIcon('warning', set.spec);
-  }
-  if (n.includes('log') || n.includes('tracker') || n.includes('task') || n.includes('roadmap')) {
-    return paintIcon('tag', set.task);
-  }
-  return paintIcon('sidebar', set.file);
+  return paintIcon(isAct ? 'activeDoc' : colorKey, icon);
 }
 
 export default function Sidebar({
@@ -146,13 +156,13 @@ export default function Sidebar({
     const emptyRows: string[] = [...frameTopLines];
     if (showBack) {
       const isCursor = cursor === 0;
-      const backPrefix = isCursor ? '❯ ' : '  ';
+      const backPrefix = '  ';
       const backIconStr = activeIcons.dirOpen || activeIcons.dir || '';
       const backIcon = backIconStr ? (theme ? paint(theme, 'info', backIconStr) : backIconStr) : '';
       let rawCell = `${backPrefix}${backIcon}..`;
       const pad = innerW - visibleWidth(rawCell);
       if (pad > 0) rawCell += ' '.repeat(pad);
-      const innerCell = isCursor ? `\x1b[7m${rawCell}\x1b[0m` : rawCell;
+      const innerCell = isCursor ? applyCursorHighlight(rawCell) : rawCell;
       emptyRows.push(borderPaint('│') + innerCell + borderPaint('│'));
     }
     const noNotesText = fit('  (no notes)', innerW);
@@ -180,13 +190,13 @@ export default function Sidebar({
 
   if (showBack) {
     const isCursor = cursor === 0;
-    const backPrefix = isCursor ? '❯ ' : '  ';
+    const backPrefix = '  ';
     const backIconStr = activeIcons.dirOpen || activeIcons.dir || '';
     const backIcon = backIconStr ? (theme ? paint(theme, 'info', backIconStr) : backIconStr) : '';
     let rawCell = `${backPrefix}${backIcon}..`;
     const pad = innerW - visibleWidth(rawCell);
     if (pad > 0) rawCell += ' '.repeat(pad);
-    const innerCell = isCursor ? `\x1b[7m${rawCell}\x1b[0m` : rawCell;
+    const innerCell = isCursor ? applyCursorHighlight(rawCell) : rawCell;
     allItems.push({
       key: 'back',
       line: borderPaint('│') + innerCell + borderPaint('│'),
@@ -201,20 +211,23 @@ export default function Sidebar({
     const isCursor = row === cursor;
 
     const icon = getEntryIcon(e, isAct, isCursor, theme, activeIcons);
-    const prefix = isCursor ? '❯ ' : '  ';
+    const prefix = '  ';
     const modSuffix = isMod ? ' ✱' : '';
 
     const iconW = visibleWidth(icon);
     const maxNameLen = Math.max(8, innerW - 2 - iconW - (isMod ? 2 : 0));
+    const truncatedName = truncate(e.name, maxNameLen);
     const nameStr = isAct
-      ? `\x1b[1m${truncate(e.name, maxNameLen)}\x1b[22m`
-      : truncate(e.name, maxNameLen);
+      ? (theme && theme.colors.activeDoc
+          ? paint(theme, 'activeDoc', `\x1b[1m${truncatedName}\x1b[22m`)
+          : `\x1b[1m${truncatedName}\x1b[22m`)
+      : truncatedName;
 
     let rawCell = prefix + icon + nameStr + modSuffix;
     const pad = innerW - visibleWidth(rawCell);
     if (pad > 0) rawCell += ' '.repeat(pad);
 
-    const innerCell = isCursor ? `\x1b[7m${rawCell}\x1b[0m` : rawCell;
+    const innerCell = isCursor ? applyCursorHighlight(rawCell) : rawCell;
     allItems.push({
       key: String(i),
       line: borderPaint('│') + innerCell + borderPaint('│'),

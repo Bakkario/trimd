@@ -30,12 +30,12 @@ test('Theme-defined icons and configurable icon sets (ADR-036, ISSUE-023)', asyn
   await t.test('resolveIconSet handles ascii, none, and emoji presets', () => {
     const ascii = resolveIconSet({}, 'ascii');
     assert.equal(ascii.dir, '/ ');
-    assert.equal(ascii.active, '* ');
+    assert.equal(ascii.active, '');
 
     const none = resolveIconSet({}, 'none');
     assert.equal(none.dir, '');
     assert.equal(none.file, '');
-    assert.equal(none.active, '● ');
+    assert.equal(none.active, '');
 
     const emoji = resolveIconSet({}, 'emoji');
     assert.equal(emoji.dir, '📁 ');
