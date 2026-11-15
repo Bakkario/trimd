@@ -26,7 +26,7 @@ trimd <FILE> [flags]
 |---|---|
 | `--root <dir>` | Root for wikilink basename resolution + sidebar start dir (default: the directory containing `FILE`) |
 | `--theme <id>` | Theme id, built-in (`default`, `light`, `dracula`, `tokyo-night`) or user theme (default: config / `default`) |
-| `--gfx <mode>` | Image graphics mode: `kitty` (Kitty Graphics Protocol), `unicode` (half-block fallback), or `none` (default: auto-detected) |
+| `--gfx <mode>` | Image graphics mode: `kitty` (Kitty Graphics Protocol), `halfblock` / `unicode` (truecolor half-block fallback), or `none` (default: auto-detected; pass `--gfx kitty` explicitly over SSH/tmux or if `KITTY_WINDOW_ID` is not set, otherwise Kitty images will not come up) |
 | `--config <path>` | Alternate config file (default: `$XDG_CONFIG_HOME/trimd/config.json`) |
 | `--no-frontmatter` | Hide the frontmatter metadata block |
 | `--no-sidebar` | Start with the sidebar closed |
@@ -120,7 +120,7 @@ Clicking works via the SGR (1006) mouse protocol: click a link in the document t
 - **Superfile Framed Sidebar:** Rounded box border (`╭─...─╮` .. `╰─...─╯`), dynamic folder (`📁`) and file (`📄`/`📘`/`📐`) icons, Git status marks (`*` modified), and quick sort toggle (`s`: name ↔ mtime).
 - **Extended Markdown Syntax:** `==mark==` highlight, `++ins++` insertion, `^sup^` superscript (`19ᵗʰ`), `~sub~` subscript (`H₂O`), footnotes (`[^1]`), definition lists (`:`, `~`), abbreviations (`*[HTML]: ...`), and `::: <type>` custom containers.
 - **LaTeX Math Rendering:** Deterministic Unicode math rendering for inline `$...$` and display `$$...$$` blocks (`α → β ⇒ γ ≤ δ ≠ ∞`, `∑`, `∫`, `∇`, fractions, superscripts/subscripts) without raw delimiter noise.
-- **Terminal Graphics & Mermaid Diagrams:** High-DPI inline images and flowcharts via the Kitty Graphics Protocol (`--gfx kitty`), with truecolor half-block Unicode fallback (`--gfx unicode`) for local PNG/JPEG images and flowchart diagrams. Toggle on the fly with `i`.
+- **Terminal Graphics & Mermaid Diagrams:** High-DPI inline images via the Kitty Graphics Protocol (**pass `--gfx kitty`** to enable Kitty image rendering when `KITTY_WINDOW_ID` / `TERM=xterm-kitty` isn't auto-detected, e.g. over SSH or `tmux`, otherwise images will not display in Kitty mode), with truecolor half-block fallback (`--gfx halfblock` / `--gfx unicode`) and Unicode box-and-arrow Mermaid diagrams in all graphics modes. Toggle on the fly with `i`.
 - **Z-Layer Floating Modals:** Interactive document outline (`o`) and Wikilink peek (`p`) cards composite seamlessly over the top-right of the document without blanking underlying content.
 - **Tokyo Night Theme:** Truecolor theme matching the Stage 3 modern developer mockup with rich contrast and syntax highlighting.
 - **Terminal Integration:** Click-to-position on the scrollbar track (`R-13`) and dynamic `OSC 2` terminal window titles (`R-16`).
