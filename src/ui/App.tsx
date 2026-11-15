@@ -285,8 +285,10 @@ export default function App({
   // 02 §11 — re-render the doc via renderFile on [abs, width, reloadTick, themeId, metaExpanded, gfxMode]
   // (INV-3.2: sidebar toggle re-wraps at the new width; INV-3.8: T re-themes; m toggles meta; i toggles gfx).
   const docMemo = useMemo(
-    () => renderFile(cur.abs, { root, width, theme: themeObj, showFrontmatter, showHidden, metaExpanded, gfx: gfxMode }),
-    [cur.abs, width, state.reloadTick, state.themeId, metaExpanded, gfxMode],
+    () => cur.abs === '<stdin>'
+      ? doc
+      : renderFile(cur.abs, { root, width, theme: themeObj, showFrontmatter, showHidden, metaExpanded, gfx: gfxMode }),
+    [cur.abs, doc, width, state.reloadTick, state.themeId, metaExpanded, gfxMode],
   );
   const entries = useMemo(
     () => listEntries(state.cwd, showHidden, sidebarSort),
@@ -998,8 +1000,8 @@ export default function App({
     });
   });
 
-  // 02 §11 — breadcrumb = root-relative path of the current doc.
-  const path = relative(root, cur.abs);
+  // 02 §11 — breadcrumb = root-relative path of the current doc (or `<stdin>`).
+  const path = cur.abs === '<stdin>' ? '<stdin>' : relative(root, cur.abs);
   const line = scrollTop + 1;
 
   // ADR-023 (ISSUE-010) / D-3.2 (ADR-026) — Bufferline-style pane headers:

@@ -1,17 +1,20 @@
+import { openSync, readFileSync } from 'node:fs';
+import tty from 'node:tty';
 import { render } from 'ink';
 import { dirname, resolve as resolvePath } from 'node:path';
 import App from './ui/App.js';
-import { renderFile } from './core/pipeline.js';
+import { renderFile, renderText } from './core/pipeline.js';
 import { resolveTheme, allThemeIds } from './core/themes.js';
 import { defaultConfigPath, loadConfig, mergeConfig, parseArgs } from './core/config.js';
 import { ConfigError, FileError, FileMissingError, UsageError } from './core/types.js';
 import type { Config, RenderedDoc, Theme } from './core/types.js';
 
-const USAGE = `usage: trimd <FILE> [flags]
+const USAGE = `usage: trimd [FILE | -] [flags]
 
 Flags:
   --root <dir>        Root for wikilink basename resolution + sidebar start dir
-                      (default: the directory containing FILE)
+                      (default: the directory containing FILE, or cwd for stdin)
+  --lang <id>         Force input format: md, text, or language (py, js, ts, json, …)
   --theme <id>        Theme id, built-in or user theme (default: config / 'default')
   --config <path>     Alternate config file (default: $XDG_CONFIG_HOME/trimd/config.json)
   --no-frontmatter    Hide the frontmatter metadata block
@@ -51,7 +54,8 @@ if (flags.help) {
   process.stdout.write(USAGE);
   process.exit(0);
 }
-if (file === null) {
+const isPiped = (file === null || file === '-') && !process.stdin.isTTY;
+if (file === null && !isPiped) {
   process.stderr.write('trimd: usage: trimd <FILE> [flags]\n');
   process.exit(3);
 }
@@ -68,8 +72,10 @@ try {
 }
 const merged = mergeConfig(cfg, flags);
 
-const abs = resolvePath(process.cwd(), file);
-const root = flags.root !== undefined ? resolvePath(process.cwd(), flags.root) : dirname(abs);
+const abs = isPiped ? '<stdin>' : resolvePath(process.cwd(), file!);
+const root = flags.root !== undefined
+  ? resolvePath(process.cwd(), flags.root)
+  : (isPiped ? process.cwd() : dirname(abs));
 
 // 02 §4 — NO_COLOR/TERM=dumb → PLAIN_THEME before any theme lookup.
 // 02 §3 — unknown theme id (after allThemeIds()) → `trimd: theme: unknown theme '<id>'`, exit 3.
@@ -84,7 +90,7 @@ try {
   fail(err, !!flags.debug);
 }
 
-const sidebarOpen = merged.sidebarOpen;
+const sidebarOpen = isPiped && flags.root === undefined ? false : merged.sidebarOpen;
 const showFrontmatter = merged.showFrontmatter;
 const showHidden = merged.showHidden;
 const cols = process.stdout.columns ?? 80;
@@ -92,16 +98,57 @@ const width = merged.width ?? Math.max(cols - (sidebarOpen ? 30 : 0) - 2, 40);
 
 let doc: RenderedDoc;
 try {
-  doc = renderFile(abs, {
-    root,
-    width,
-    theme,
-    showFrontmatter,
-    showHidden,
-    gfx: merged.gfx,
-  });
+  if (isPiped) {
+    const stdinText = readFileSync(0, 'utf8');
+    doc = renderText(stdinText, '<stdin>', {
+      root,
+      width,
+      theme,
+      showFrontmatter,
+      showHidden,
+      gfx: merged.gfx,
+      lang: flags.lang,
+    });
+  } else {
+    doc = renderFile(abs, {
+      root,
+      width,
+      theme,
+      showFrontmatter,
+      showHidden,
+      gfx: merged.gfx,
+      lang: flags.lang,
+    });
+  }
 } catch (err) {
   fail(err, !!flags.debug);
 }
 
-render(<App doc={doc} root={root} theme={theme} themeId={theme.id} sidebarOpen={sidebarOpen} showHidden={showHidden} showFrontmatter={showFrontmatter} gfx={merged.gfx} icons={flags.icons ?? merged.icons} />);
+let ttyIn: tty.ReadStream | undefined;
+if (isPiped) {
+  try {
+    const ttyFd = openSync('/dev/tty', 'r');
+    ttyIn = new tty.ReadStream(ttyFd);
+  } catch {
+    fail(new FileError('cannot open /dev/tty for interactive input'), !!flags.debug);
+  }
+}
+
+const inst = render(
+  <App
+    doc={doc}
+    root={root}
+    theme={theme}
+    themeId={theme.id}
+    sidebarOpen={sidebarOpen}
+    showHidden={showHidden}
+    showFrontmatter={showFrontmatter}
+    gfx={merged.gfx}
+    icons={flags.icons ?? merged.icons}
+  />,
+  ttyIn ? { stdin: ttyIn } : undefined,
+);
+
+if (ttyIn) {
+  inst.waitUntilExit().finally(() => ttyIn?.destroy());
+}

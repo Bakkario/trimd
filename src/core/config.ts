@@ -17,6 +17,7 @@ export interface ParsedArgs {
     width?: number; debug?: boolean; help?: boolean;
     gfx?: 'kitty' | 'halfblock' | 'unicode' | 'none';
     icons?: 'nerd' | 'emoji' | 'ascii' | 'none' | 'auto';
+    lang?: string;
   };
 }
 
@@ -45,7 +46,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       const name = eq === -1 ? a.slice(2) : a.slice(2, eq);
       // Unknown flags are detected before value consumption (03: unknown flag
       // → UsageError('unknown flag: --x')), even in the value form --bogus=x.
-      if (name !== 'root' && name !== 'theme' && name !== 'config' && name !== 'width' && name !== 'gfx' && name !== 'icons') {
+      if (name !== 'root' && name !== 'theme' && name !== 'config' && name !== 'width' && name !== 'gfx' && name !== 'icons' && name !== 'lang') {
         throw new UsageError('unknown flag: --' + name);
       }
       let val: string;
@@ -72,6 +73,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
             throw new UsageError('--icons requires one of: nerd, emoji, ascii, none, auto');
           }
           flags.icons = val as 'nerd' | 'emoji' | 'ascii' | 'none' | 'auto';
+          break;
+        }
+        case 'lang': {
+          const lang = val.trim();
+          if (!lang) throw new UsageError('--lang requires a non-empty language id');
+          flags.lang = lang;
           break;
         }
         case 'width': {

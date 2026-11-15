@@ -8,6 +8,7 @@ import { parseTokens } from './parse.js';
 import { renderTokens, visibleWidth, wrapLines, type RenderCtx } from './renderer.js';
 import { buildBacklinkIndex, buildIndex, makeResolver, type RootIndex } from './resolve.js';
 import { paint } from './themes.js';
+import { highlightAuto, highlightCode, resolveInputFormat } from './highlight.js';
 
 // 02 §5 — exact pipeline: read → frontmatter → parse → render → wrap → meta → title → warnings.
 
@@ -19,6 +20,7 @@ export interface PipelineCtx {
   showHidden?: boolean;
   metaExpanded?: boolean; // Phase 3 (Task 7.4, ADR-027): false (default) = compact strip, true = full YAML
   gfx?: 'kitty' | 'halfblock' | 'unicode' | 'none';
+  lang?: string;
 }
 
 let indexRoot: string | null = null;
@@ -67,22 +69,38 @@ function titleOf(meta: FrontmatterMeta | null, tokens: Token[], abs: string): st
   return dot > 0 ? b.slice(0, dot) : b;
 }
 
-export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
-  let text: string;
-  try {
-    text = readFileSync(abs, 'utf8');
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new FileMissingError('file not found: ' + abs);
-    }
-    throw new FileError('cannot read ' + abs + ': ' + (err as Error).message);
+export function renderText(text: string, sourceLabel: string, ctx: PipelineCtx): RenderedDoc {
+  const format = resolveInputFormat(text, sourceLabel, ctx.lang);
+
+  if (format.kind !== 'markdown') {
+    const body = format.kind === 'code' && ctx.theme.id !== 'plain'
+      ? (format.lang === 'auto' ? highlightAuto(text) : highlightCode(text, format.lang))
+      : text;
+    const rawLines = body.replace(/\r\n?/g, '\n').split('\n');
+    const gutterW = Math.max(2, String(rawLines.length).length);
+    const numbered = rawLines.map((lineText, idx) => {
+      const num = String(idx + 1).padStart(gutterW) + ' │ ';
+      const prefix = ctx.theme.id === 'plain' ? num : paint(ctx.theme, 'dim', num);
+      return { text: prefix + lineText, links: [] };
+    });
+    const outLines = wrapLines(numbered, ctx.width);
+    return {
+      lines: outLines,
+      meta: null,
+      title: basename(sourceLabel),
+      warnings: [],
+      source: sourceLabel,
+      fences: [],
+      headings: [],
+    };
   }
+
   const { meta, body } = extractFrontmatter(text);
   const tokens = parseTokens(body);
   const rctx: RenderCtx = {
     theme: ctx.theme,
     width: ctx.width,
-    sourceDir: dirname(abs),
+    sourceDir: sourceLabel === '<stdin>' ? ctx.root : dirname(sourceLabel),
     resolve: getResolver(ctx),
     gfx: ctx.gfx,
   };
@@ -98,62 +116,60 @@ export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
     outLines.unshift(...metaLines);
   }
 
-  // Phase 3 (Task 9.2, ADR-030) — Read-only Linked Mentions footer
-  const rootIdx = getRootIndex(ctx);
-  const backlinkMap = buildBacklinkIndex(ctx.root, rootIdx);
-  const incoming = backlinkMap.get(abs) ?? [];
-  if (incoming.length > 0) {
-    // Blank separator rhythm before Linked Mentions section if document has content
-    if (outLines.length > 0) {
-      outLines.push({ text: '', links: [] });
-    }
-    const headerText = `── Linked Mentions (${incoming.length}) ──`;
-    outLines.push({
-      text: paint(ctx.theme, 'dim', headerText),
-      links: [],
-    });
+  // Phase 3 (Task 9.2, ADR-030) — Read-only Linked Mentions footer (disk files only)
+  if (sourceLabel !== '<stdin>') {
+    const rootIdx = getRootIndex(ctx);
+    const backlinkMap = buildBacklinkIndex(ctx.root, rootIdx);
+    const incoming = backlinkMap.get(sourceLabel) ?? [];
+    if (incoming.length > 0) {
+      if (outLines.length > 0) {
+        outLines.push({ text: '', links: [] });
+      }
+      const headerText = `── Linked Mentions (${incoming.length}) ──`;
+      outLines.push({
+        text: paint(ctx.theme, 'dim', headerText),
+        links: [],
+      });
 
-    // Form links row(s): "  ↩ Note1  ↩ Note2"
-    let currentLine = '  ';
-    let currentSpans: typeof outLines[0]['links'] = [];
-    const currentLineIdx = outLines.length;
+      let currentLine = '  ';
+      let currentSpans: typeof outLines[0]['links'] = [];
 
-    for (let i = 0; i < incoming.length; i++) {
-      const srcAbs = incoming[i];
-      const noteBase = basename(srcAbs).replace(/\.mdx?$/i, '');
-      const label = `↩ ${noteBase}`;
-      const styledLabel = paint(ctx.theme, 'link', label);
-      // Check if adding exceeds width
-      const labelW = visibleWidth(label);
-      if (currentSpans.length > 0 && (visibleWidth(currentLine) + labelW + 2) > ctx.width) {
-        outLines.push({ text: currentLine, links: currentSpans });
-        currentLine = '  ';
-        currentSpans = [];
-      } else if (currentSpans.length > 0) {
-        currentLine += '  ';
+      for (let i = 0; i < incoming.length; i++) {
+        const srcAbs = incoming[i];
+        const noteBase = basename(srcAbs).replace(/\.mdx?$/i, '');
+        const label = `↩ ${noteBase}`;
+        const styledLabel = paint(ctx.theme, 'link', label);
+        const labelW = visibleWidth(label);
+        if (currentSpans.length > 0 && (visibleWidth(currentLine) + labelW + 2) > ctx.width) {
+          outLines.push({ text: currentLine, links: currentSpans });
+          currentLine = '  ';
+          currentSpans = [];
+        } else if (currentSpans.length > 0) {
+          currentLine += '  ';
+        }
+
+        const startCol = visibleWidth(currentLine);
+        const osc8 = `\x1b]8;url=file://${srcAbs}\x1b\\${styledLabel}\x1b]8;;\x1b\\`;
+        currentLine += osc8;
+        const endCol = startCol + labelW;
+
+        currentSpans.push({
+          line: outLines.length,
+          startCol,
+          endCol,
+          href: srcAbs,
+          kind: 'wikilink',
+          resolved: true,
+        });
       }
 
-      const startCol = visibleWidth(currentLine);
-      const osc8 = `\x1b]8;url=file://${srcAbs}\x1b\\${styledLabel}\x1b]8;;\x1b\\`;
-      currentLine += osc8;
-      const endCol = startCol + labelW;
-
-      currentSpans.push({
-        line: outLines.length,
-        startCol,
-        endCol,
-        href: srcAbs,
-        kind: 'wikilink',
-        resolved: true,
-      });
-    }
-
-    if (currentSpans.length > 0) {
-      outLines.push({ text: currentLine, links: currentSpans });
+      if (currentSpans.length > 0) {
+        outLines.push({ text: currentLine, links: currentSpans });
+      }
     }
   }
 
-  const title = titleOf(meta, tokens, abs);
+  const title = titleOf(meta, tokens, sourceLabel);
   let n = 0;
   for (const l of outLines) n += (visible(l.text).match(/ \u26a0/g) ?? []).length;
   const warnings: string[] = [];
@@ -170,5 +186,18 @@ export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
     line: h.line + metaLinesCount,
   }));
 
-  return { lines: outLines, meta, title, warnings, source: abs, fences: remappedFences, headings: remappedHeadings };
+  return { lines: outLines, meta, title, warnings, source: sourceLabel, fences: remappedFences, headings: remappedHeadings };
+}
+
+export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
+  let text: string;
+  try {
+    text = readFileSync(abs, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new FileMissingError('file not found: ' + abs);
+    }
+    throw new FileError('cannot read ' + abs + ': ' + (err as Error).message);
+  }
+  return renderText(text, abs, ctx);
 }
