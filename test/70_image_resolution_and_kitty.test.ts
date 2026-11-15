@@ -26,12 +26,12 @@ test('ISSUE-028: relative subpath image resolves against sourceDir', () => {
   assert.ok(imageLabelLine.links.some((s) => s.resolved && s.href.endsWith('test/fixtures/sample-diagram.png')), 'image link resolved');
 });
 
-test('ISSUE-028: halfblock renderInlineImageRows uses proportional dimensions (> 6 rows, up to 72 cols)', () => {
+test('ISSUE-028: halfblock renderInlineImageRows uses proportional dimensions (up to 54 cols, 6-14 rows)', () => {
   const imgPath = join(process.cwd(), 'test/fixtures/sample-diagram.png');
   const rows = renderInlineImageRows(imgPath, 100, 'halfblock', DEFAULT_THEME);
-  // Top border + >= 8 pixel rows + bottom border => >= 10 lines
-  assert.ok(rows.length >= 10, `expected >= 10 halfblock rows (border + >=8), got ${rows.length}`);
-  assert.equal(visibleWidth(rows[0]), 74, 'expected 72 cols + 2 border cols = 74');
+  // Top border + >= 6 pixel rows + bottom border => >= 8 lines
+  assert.ok(rows.length >= 8, `expected >= 8 halfblock rows (border + >=6), got ${rows.length}`);
+  assert.equal(visibleWidth(rows[0]), 56, 'expected 54 cols + 2 border cols = 56');
 });
 
 test('ISSUE-028: wrapLines and sliceAnsiByCols preserve Kitty APC and tmux passthrough sequences intact', () => {

@@ -69,7 +69,27 @@ export function renderHalfBlockImage(imgBuf: Buffer, cols: number, rows: number,
   return out;
 }
 
-export function encodeKittyPng(pngBuf: Buffer, cols: number, rows: number, env: NodeJS.ProcessEnv = process.env): string[] {
+export function kittyImageId(key: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h & 0x7fffffff) || 1;
+}
+
+export function encodeKittyPlace(imageId: number, cols: number, rows: number, env: NodeJS.ProcessEnv = process.env): string {
+  const apc = `\x1b_Ga=p,i=${imageId},p=1,c=${cols},r=${rows},C=1,q=2\x1b\\`;
+  return env.TMUX ? `\x1bPtmux;\x1b${apc}\x1b\\` : apc;
+}
+
+export function encodeKittyPng(
+  pngBuf: Buffer,
+  cols: number,
+  rows: number,
+  env: NodeJS.ProcessEnv = process.env,
+  imageId?: number,
+): string[] {
   const b64 = pngBuf.toString('base64');
   const CHUNK_SIZE = 4096;
   const chunks: string[] = [];
@@ -86,7 +106,8 @@ export function encodeKittyPng(pngBuf: Buffer, cols: number, rows: number, env: 
 
     let params: string;
     if (isFirst) {
-      params = `a=T,f=100,c=${cols},r=${rows},C=1,q=2,m=${chunks.length > 1 ? 1 : 0}`;
+      const idPart = imageId !== undefined ? `,i=${imageId},p=1` : '';
+      params = `a=T,f=100${idPart},c=${cols},r=${rows},C=1,q=2,m=${chunks.length > 1 ? 1 : 0}`;
     } else {
       params = `m=${m}`;
     }
@@ -223,13 +244,13 @@ export function renderInlineImageRows(absOrUrl: string, width: number, gfx: GfxM
   const img = loadImageAsPng(absOrUrl);
   if (!img) return [];
 
-  const maxCols = Math.max(20, Math.min(72, width - 6));
+  const maxCols = Math.max(20, Math.min(54, width - 6));
   const aspect = img.height > 0 && img.width > 0 ? img.height / img.width : 0.5;
   const cols = maxCols;
-  const rows = Math.max(8, Math.min(20, Math.round(cols * aspect * 0.5)));
+  const rows = Math.max(6, Math.min(14, Math.round(cols * aspect * 0.5)));
 
   if (gfx === 'kitty') {
-    return encodeKittyPng(img.png, cols, rows);
+    return encodeKittyPng(img.png, cols, rows, process.env, kittyImageId(absOrUrl));
   }
   return renderHalfBlockImage(img.png, cols, rows, theme.colors.tableBorder);
 }

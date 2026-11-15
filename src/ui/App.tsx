@@ -12,7 +12,7 @@ import { encodeOsc52, isSshSession, extractSelectionText, applySelectionHighligh
 import type { DocState, Focus, UiState } from '../core/nav.js';
 import { findMatches, applySearch } from '../core/search.js';
 import { stripAnsi, visibleWidth } from '../core/renderer.js';
-import { detectGfxMode } from '../core/media.js';
+import { detectGfxMode, encodeKittyPlace } from '../core/media.js';
 import { buildModalBox } from '../core/overlay.js';
 import { collectVisibleLinks, applyLinkHints, resolveHintInput, type HintTarget } from '../core/link-hints.js';
 import DocPane from './DocPane.js';
@@ -1220,13 +1220,33 @@ export default function App({
     return undefined;
   }, [peekTarget, outlineOpen, search?.rowOpen, search?.query, search?.idx, matches.length, toast, activeDocMemo.headings, outlineCursor, contentRows, modalW, themeObj, width]);
 
-  // Task 14.1 (ISSUE-028) — Emit Kitty APC graphics directly to stdout after Ink renders,
-  // since Ink's text tokenizer drops \x1b_G sequences.
+  // Task 14.1 (ISSUE-028) + ISSUE-031 — Emit Kitty APC graphics directly to stdout after Ink renders,
+  // caching transmitted image IDs so scroll frames only send ~35-byte a=p placement commands.
+  const transmittedKittyIdsRef = useRef<Set<number>>(new Set());
+  const gfxModeRef = useRef(gfxMode);
+  gfxModeRef.current = gfxMode;
+  const wasKittyRef = useRef(false);
+
   useEffect(() => {
-    const delSeq = process.env.TMUX ? '\x1bPtmux;\x1b\x1b_Ga=d,d=A,q=2\x1b\\\x1b\\' : '\x1b_Ga=d,d=A,q=2\x1b\\';
+    const clearAllSeq = process.env.TMUX ? '\x1bPtmux;\x1b\x1b_Ga=d,d=A,q=2\x1b\\\x1b\\' : '\x1b_Ga=d,d=A,q=2\x1b\\';
+    return () => {
+      if (gfxModeRef.current === 'kitty' || wasKittyRef.current) {
+        transmittedKittyIdsRef.current.clear();
+        stdout.write(clearAllSeq);
+      }
+    };
+  }, [stdout]);
+
+  useEffect(() => {
+    const clearPlacementsSeq = process.env.TMUX ? '\x1bPtmux;\x1b\x1b_Ga=d,d=a,q=2\x1b\\\x1b\\' : '\x1b_Ga=d,d=a,q=2\x1b\\';
     if (gfxMode !== 'kitty') {
+      if (wasKittyRef.current) {
+        wasKittyRef.current = false;
+        stdout.write(clearPlacementsSeq);
+      }
       return;
     }
+    wasKittyRef.current = true;
     const timer = setTimeout(() => {
       let placements = '';
       if (!overlay) {
@@ -1241,15 +1261,27 @@ export default function App({
             const termRow = 2 + i;
             const prefixW = visibleWidth(lineText.slice(0, m.index));
             const termCol = baseCol + prefixW;
-            placements += `\x1b[${termRow};${termCol}H${m[0]}`;
+            const rawApc = m[0];
+            const idMatch = rawApc.match(/,i=(\d+),p=\d+,c=(\d+),r=(\d+)/);
+            let payload = rawApc;
+            if (idMatch) {
+              const id = Number(idMatch[1]);
+              const cols = Number(idMatch[2]);
+              const rows = Number(idMatch[3]);
+              if (transmittedKittyIdsRef.current.has(id)) {
+                payload = encodeKittyPlace(id, cols, rows, process.env);
+              } else {
+                transmittedKittyIdsRef.current.add(id);
+              }
+            }
+            placements += `\x1b[${termRow};${termCol}H${payload}`;
           }
         }
       }
-      stdout.write(`\x1b7${delSeq}${placements}\x1b8`);
-    }, 15);
+      stdout.write(`\x1b7${clearPlacementsSeq}${placements}\x1b8`);
+    }, 10);
     return () => {
       clearTimeout(timer);
-      stdout.write(delSeq);
     };
   }, [gfxMode, cur.doc, scrollTop, contentRows, state.sidebarOpen, overlay, stdout]);
 
