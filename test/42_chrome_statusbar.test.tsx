@@ -48,7 +48,7 @@ function releaseStdinFixture() {
   process.stdin.unref();
 }
 
-test('Task 6.3: Top chrome header has DOC / FILES accent pills and StatusBar has resilient hints & scroll %', async () => {
+test('Task 6.3: Top chrome header has Bufferline tab, history & reading stats and StatusBar has DOC pill, hints & scroll %', async () => {
   const tmp = mkdtempSync(join(tmpdir(), 'trimd-42-'));
   const root = join(tmp, 'vault');
   mkdirSync(root);
@@ -71,11 +71,12 @@ test('Task 6.3: Top chrome header has DOC / FILES accent pills and StatusBar has
     const frame = stripAnsi(raw);
 
     // Header checks
-    assert.ok(frame.includes('DOC'), 'DOC pill text rendered in top header');
+    assert.ok(frame.includes('¶ note.md ●'), 'active Bufferline tab rendered in top header');
     assert.ok(frame.includes('< B  F >'), 'history state indicators rendered');
     assert.ok(frame.includes('min'), 'reading time stat rendered');
 
     // Status bar checks
+    assert.ok(frame.includes('DOC'), 'DOC mode pill rendered in status bar');
     assert.ok(frame.includes('find'), 'search hint in status bar');
     assert.ok(frame.includes('%'), 'percentage rendered in status bar');
     assert.ok(frame.includes('default'), 'theme pill in status bar');

@@ -1,10 +1,10 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { basename, relative } from 'node:path';
-import type { LinkSpan, MouseEvt, RenderedDoc, Theme } from '../core/types.js';
+import type { LinkSpan, MouseEvt, RenderedDoc, Theme, ThemeColors, ThemeIconMap } from '../core/types.js';
 import { paint, allThemeIds, BUILTIN_THEMES, loadUserTheme, resolveIconSet } from '../core/themes.js';
 import { renderFile } from '../core/pipeline.js';
-import { listEntries, detectGitModified, clearGitCache, buildIndex, buildBacklinkIndex } from '../core/resolve.js';
+import { listEntries, detectGitModified, detectGitBranch, clearGitCache, buildIndex, buildBacklinkIndex } from '../core/resolve.js';
 import { navBack, navForward, navOpen, navUp, nextTheme, hitTestDoc, hitTestSidebar } from '../core/nav.js';
 import { MOUSE_ENABLE, MOUSE_DISABLE, createMouseParser } from '../core/mouse.js';
 import { openExternal, canOpen } from '../core/open.js';
@@ -57,10 +57,37 @@ function paintBarRow(content: string, totalCols: number, bgSgr: string): string 
   return '\x1b[' + bgSgr + 'm' + withBg + '\x1b[0m';
 }
 
-// 02 §11 / D-3.2 (ADR-026) — StatusBar (full-width headerBg, 3 segments).
-// Left: search indicator or L<line> <line>/<total>.
-// Center: contextual key hints (never disappear when warnings non-empty).
-// Right: compact warning badge ( ⚠ <N> ) + scroll percentage + theme pill.
+function extractFgSgr(sgr: string): string {
+  if (!sgr) return '';
+  const m = sgr.match(/(38;5;\d+|38;2;\d+;\d+;\d+|3[0-7]|9[0-7])/);
+  return m ? m[1] : '';
+}
+
+function paintChip(
+  theme: Theme,
+  text: string,
+  fgKey: keyof ThemeColors | '',
+  bgKey?: keyof ThemeColors,
+  bold = false,
+): string {
+  if (theme.id === 'plain') return text;
+  if (!bgKey && (fgKey === 'accentPill' || fgKey === 'linkHint' || fgKey === 'tagChip')) {
+    const raw = theme.colors[fgKey];
+    return raw ? '\x1b[' + raw + 'm' + text + '\x1b[0m' : text;
+  }
+  if (fgKey === 'dim') {
+    const bg = bgKey && theme.colors[bgKey] ? '\x1b[' + theme.colors[bgKey] + 'm' : '';
+    return bg + paint(theme, 'dim', text);
+  }
+  const fg = fgKey ? extractFgSgr(theme.colors[fgKey]) : '';
+  const bg = bgKey ? theme.colors[bgKey] : '';
+  const parts = [bold ? '1' : '', fg, bg].filter(Boolean);
+  if (parts.length === 0) return text;
+  return '\x1b[' + parts.join(';') + 'm' + text + '\x1b[0m';
+}
+
+// 02 §11 / D-3.2 (ADR-026) — Lualine-style 3-tier StatusBar (full-width headerBg):
+// Left: [MODE] [ branch *N] [file / search] | Center: two-tone key hints | Right: [warn] [Lline l/T · %] [theme]
 function StatusBar({
   theme,
   path,
@@ -76,6 +103,10 @@ function StatusBar({
   columns,
   linkMode,
   transientToast,
+  gitBranch,
+  gitModCount = 0,
+  iconSet,
+  isNerd = false,
 }: {
   theme: Theme;
   path: string;
@@ -91,54 +122,105 @@ function StatusBar({
   columns: number;
   linkMode?: { buf: string } | null;
   transientToast?: string | null;
+  gitBranch?: string | null;
+  gitModCount?: number;
+  iconSet?: Required<ThemeIconMap>;
+  isNerd?: boolean;
 }) {
-  let leftText = `L${line} ${line}/${total}`;
-  if (search && search.query) {
-    leftText = `/ ${search.query} ${searchMatches > 0 ? search.idx + 1 : 0}/${searchMatches}`;
-  }
-
-  // Key hints
-  let centerText = '';
-  if (transientToast) {
-    centerText = transientToast;
-  } else if (linkMode) {
-    centerText = `l link mode: press [1-N] to open · Esc cancel${linkMode.buf ? ` (${linkMode.buf})` : ''}`;
-  } else if (focus === 'sidebar') {
-    centerText = '↑↓ move · ⏎ open · ←/→ pane · ?';
-  } else {
-    centerText = columns >= 95
-      ? '↑↓ scroll · / find · l links · o outline · y copy · ?'
-      : '↑↓ · / · l · o · y · ?';
-  }
-
-  // Right group: warning badge, scroll %, theme pill
   const scrollPct = total > 0
     ? Math.max(0, Math.min(100, Math.round(((scrollTop + contentRows) / total) * 100)))
     : 100;
   const pctStr = `${scrollPct}%`;
 
-  const warnBadge = warnings.length > 0 ? ` ⚠ ${warnings.length} ` : '';
-  const themePill = ` ${themeId} `;
+  // Tier A: Mode pill
+  const modePill = linkMode
+    ? paintChip(theme, ' LINK ', 'linkHint')
+    : search?.rowOpen
+      ? paintChip(theme, ' FIND ', 'linkHint')
+      : focus === 'sidebar'
+        ? paintChip(theme, ' FILES ', 'accentPill')
+        : paintChip(theme, ' DOC ', 'accentPill');
 
-  // Line is rendered across headerBg
-  const leftPainted = ' ' + paint(theme, 'dim', leftText) + ' ';
-  const centerPainted = paint(theme, 'dim', centerText);
-  const warnPainted = warnBadge ? paint(theme, 'statusWarn', warnBadge) : '';
-  const pctPainted = ' ' + paint(theme, 'dim', pctStr) + ' ';
-  const themePainted = paint(theme, 'accentPill', themePill) + ' ';
+  // Tier B: Git branch + dirty count chip
+  const branchGlyph = isNerd ? '\ue0a0 ' : '';
+  const dirtySuffix = gitModCount > 0 ? ` *${gitModCount}` : '';
+  const gitChip = gitBranch && columns >= 88
+    ? paintChip(theme, ` ${branchGlyph}${fitLabel(gitBranch, 16)}${dirtySuffix} `, 'heading2', 'calloutBg', true)
+    : '';
 
-  const rightPainted = warnPainted + pctPainted + themePainted;
+  // Tier C: Active file or search query chip
+  let tierC = '';
+  if (search && search.query) {
+    const searchLabel = `/ ${fitLabel(search.query, 18)} ${searchMatches > 0 ? search.idx + 1 : 0}/${searchMatches}`;
+    tierC = paintChip(theme, ` ${searchLabel} `, 'warning', 'codeBg', true);
+  } else {
+    const fileIcon = iconSet?.file ? iconSet.file : '';
+    const docName = fitLabel(basename(path) || path, columns >= 100 ? 22 : 14);
+    tierC = paintChip(theme, ` ${fileIcon}${docName} `, 'sidebar', 'codeBg');
+  }
+
+  const leftPainted = modePill + gitChip + tierC;
+
+  // Center: Two-tone color-coded key hints (or link mode / transient toast)
+  const hint = (k: string, desc: string) =>
+    paintChip(theme, k, 'heading1', undefined, true) + (desc ? ' ' + paint(theme, 'dim', desc) : '');
+  const dotSep = paint(theme, 'dim', ' · ');
+  let centerPainted = '';
+  if (transientToast) {
+    centerPainted = paintChip(theme, ` ${transientToast} `, 'success', 'calloutBg', true);
+  } else if (linkMode) {
+    centerPainted = [
+      paintChip(theme, ' LINK ', 'linkHint'),
+      hint('1-N', 'open'),
+      hint('Esc', `cancel${linkMode.buf ? ` (${linkMode.buf})` : ''}`),
+    ].join('  ');
+  } else if (focus === 'sidebar') {
+    centerPainted = columns >= 105
+      ? [hint('↑↓', 'move'), hint('⏎', 'open'), hint('←/→', 'pane'), hint('s', 'sort'), hint('?', 'help')].join('  ')
+      : [hint('↑↓', 'move'), hint('⏎', 'open'), hint('←/→', 'pane'), hint('?', '')].join(dotSep);
+  } else if (columns >= 115) {
+    centerPainted = [hint('↑↓', 'scroll'), hint('/', 'find'), hint('l', 'links'), hint('o', 'outline'), hint('p', 'peek'), hint('y', 'copy'), hint('?', 'help')].join('  ');
+  } else if (columns >= 95) {
+    centerPainted = [hint('↑↓', 'scroll'), hint('/', 'find'), hint('l', 'links'), hint('o', 'outline'), hint('?', 'help')].join('  ');
+  } else {
+    centerPainted = [hint('↑↓', ''), hint('/', ''), hint('l', ''), hint('o', ''), hint('y', ''), hint('?', '')].join(dotSep);
+  }
+
+  // Tier X: Diagnostics chip
+  const warnGlyph = isNerd ? '\uf071 ' : '⚠ ';
+  const diagChip = warnings.length > 0
+    ? paintChip(theme, ` ${warnGlyph}${warnings.length} `, 'statusWarn', 'calloutBg', true)
+    : (columns >= 95 ? paintChip(theme, ' ✔ 0 warn ', 'success', 'calloutBg') : '');
+
+  // Tier Y: Position + scroll % (preserves `L<line> <line>/<total>` and `<pct>%`)
+  const posChip = paintChip(theme, ` L${line} ${line}/${total} · ${pctStr} `, 'tag', 'codeBg', true);
+
+  // Tier Z: Theme badge
+  const themeGlyph = isNerd ? '\ue22b ' : '';
+  const themePainted = paintChip(theme, ` ${themeGlyph}${themeId} `, 'accentPill');
+
+  let rightPainted = diagChip + posChip + themePainted;
+  let finalLeft = leftPainted;
+  let finalCenter = centerPainted;
+
+  if (visibleWidth(finalLeft) + visibleWidth(finalCenter) + visibleWidth(rightPainted) + 2 > columns) {
+    finalCenter = '';
+  }
+  if (visibleWidth(finalLeft) + visibleWidth(finalCenter) + visibleWidth(rightPainted) + 1 > columns) {
+    finalLeft = modePill + tierC;
+    rightPainted = (warnings.length > 0 ? diagChip : '') + posChip + themePainted;
+  }
 
   // Calculate spaces between left, center, right to fill columns exactly
-  const leftW = visibleWidth(leftPainted);
-  const centerW = visibleWidth(centerPainted);
+  const leftW = visibleWidth(finalLeft);
+  const centerW = visibleWidth(finalCenter);
   const rightW = visibleWidth(rightPainted);
   const totalContentW = leftW + centerW + rightW;
   const remaining = Math.max(0, columns - totalContentW);
-  const gap1 = Math.floor(remaining / 2);
-  const gap2 = remaining - gap1;
+  const gap1 = finalCenter ? Math.floor(remaining / 2) : remaining;
+  const gap2 = finalCenter ? remaining - gap1 : 0;
 
-  const barContent = leftPainted + ' '.repeat(gap1) + centerPainted + ' '.repeat(gap2) + rightPainted;
+  const barContent = finalLeft + ' '.repeat(gap1) + finalCenter + ' '.repeat(gap2) + rightPainted;
   const paintedRow = paintBarRow(barContent, columns, theme.colors.headerBg);
 
   return (
@@ -183,10 +265,10 @@ export default function App({
   const cur = state.stack[state.cur];
 
   // 02 §11 / ADR-023 / ADR-026 — chrome layout: header row (row 0) + content rows +
-  // status row. When search row is open, content rows = terminalRows - 3.
+  // status row. Search renders as a floating Noice-style overlay so contentRows never jumps.
   const stdout = useStdout().stdout as NodeJS.WritableStream & { rows?: number; columns?: number };
   const terminalRows = stdout.rows || 24;
-  const contentRows = Math.max(1, terminalRows - 2 - (search?.rowOpen ? 1 : 0));
+  const contentRows = Math.max(1, terminalRows - 2);
   const width = Math.max((stdout.columns || 80) - (state.sidebarOpen ? 31 : 0) - 5, 40);
 
   // 02 §11 / INV-3.8 — the theme object follows state.themeId (T cycles it
@@ -345,14 +427,10 @@ export default function App({
 
       if (e.action !== 'release' || e.button !== 0) return;
       const { state: st, doc, scrollTop: top, render: renderNow, contentRows: crows, searchRowOpen } = view.current;
-      // ADR-023 (ISSUE-010, ISSUE-025) — Row 0 is the header bar, rows 1..searchOffset
-      // is the search input, content spans `crows` rows (e.y = 1+searchOffset .. crows+searchOffset),
-      // and the status row (1 + crows + searchOffset) and anything below it is not clickable.
-      const searchOffset = searchRowOpen ? 1 : 0;
+      // ADR-023 (ISSUE-010, ISSUE-025) — Row 0 is the header bar, content spans `crows`
+      // rows (e.y = 1 .. crows), and the status row (1 + crows) is not clickable.
+      const searchOffset = 0;
       if (e.y >= 1 + crows + searchOffset) return;
-      // ADR-023 — content starts below the header row (and search row if open);
-      // clicks on header row or search input row are no-ops.
-      if (searchRowOpen && e.y === 1) return;
       const rowY = e.y - 1 - searchOffset;
       if (rowY < 0) return;
       if (st.sidebarOpen && e.x < 30) {
@@ -924,14 +1002,17 @@ export default function App({
   const path = relative(root, cur.abs);
   const line = scrollTop + 1;
 
-  // ADR-023 (ISSUE-010) / D-3.2 (ADR-026) — pane headers:
+  // ADR-023 (ISSUE-010) / D-3.2 (ADR-026) — Bufferline-style pane headers:
   // Row 0 across headerBg.
-  // Sidebar: ` FILES ` in accentPill when focused else dim ` ▾ <cwd>`.
-  // Doc: ` DOC ` in accentPill when focused + ` ¶ <path>` + < B  F > + reading stat.
-  const cwdName = fitLabel(state.cwd === root ? basename(root) : relative(root, state.cwd), 22);
+  // Sidebar: active vault badge on codeBg when focused else dim on calloutBg.
+  // Doc: Bufferline history tabs + colored `< B  F >` + reading min + word count pill.
+  const isNerd = iconSet.file === '\ue609 ';
+  const columns = stdout.columns || 80;
+  const cwdName = fitLabel(state.cwd === root ? basename(root) : relative(root, state.cwd), 24);
+  const dirGlyph = iconSet.dir || '';
   const sidebarHeader = state.focus === 'sidebar'
-    ? paint(themeObj, 'accentPill', ' FILES ') + ' ' + cwdName
-    : paint(themeObj, 'dim', ' ▾ ' + cwdName);
+    ? paintChip(themeObj, ` ${dirGlyph}${cwdName} `, 'heading1', 'codeBg', true)
+    : paintChip(themeObj, ` ▾ ${cwdName} `, 'dim', 'calloutBg');
 
   // Doc stats: reading time (~200 wpm)
   const wordCount = useMemo(() => {
@@ -945,25 +1026,43 @@ export default function App({
     return words;
   }, [docMemo]);
   const readingMin = Math.max(1, Math.ceil(wordCount / 200));
-  const readingStat = `${readingMin} min · ${wordCount}w`;
 
-  // History state: < B  F >
+  // History state: colored < B  F > pill (preserves `< B  F >` substring)
   const canBack = state.cur > 0;
   const canFwd = state.cur < state.stack.length - 1;
-  const bStr = canBack ? 'B' : paint(themeObj, 'dim', 'B');
-  const fStr = canFwd ? 'F' : paint(themeObj, 'dim', 'F');
-  const histStr = `< ${bStr}  ${fStr} >`;
+  const bStr = canBack ? paintChip(themeObj, 'B', 'heading1', 'calloutBg', true) : paintChip(themeObj, 'B', 'dim', 'calloutBg');
+  const fStr = canFwd ? paintChip(themeObj, 'F', 'heading1', 'calloutBg', true) : paintChip(themeObj, 'F', 'dim', 'calloutBg');
+  const histStr =
+    paintChip(themeObj, '< ', 'dim', 'calloutBg')
+    + bStr
+    + paintChip(themeObj, '  ', 'dim', 'calloutBg')
+    + fStr
+    + paintChip(themeObj, ' >', 'dim', 'calloutBg');
 
-    const docPill = state.focus === 'doc'
-    ? paint(themeObj, 'accentPill', ' DOC ') + ' '
+  const activeTabLabel = state.stack.length > 1 && columns >= 95
+    ? fitLabel(basename(path) || path, 22)
+    : fitLabel(path, Math.max(10, width - 32));
+  const activeTab = paintChip(
+    themeObj,
+    ` ¶ ${activeTabLabel} ● `,
+    state.focus === 'doc' ? 'heading1' : 'dim',
+    'codeBg',
+    state.focus === 'doc',
+  );
+  const prevTab = state.cur > 0 && state.stack.length > 1 && columns >= 95
+    ? paintChip(themeObj, ` ${fitLabel(basename(relative(root, state.stack[state.cur - 1].abs)), 14)} `, 'dim', 'calloutBg')
+      + paint(themeObj, 'dim', '╲')
     : '';
-  const docTitle = fitLabel('¶ ' + path, Math.max(10, width - 25));
-  const docTitleText = state.focus === 'doc'
-    ? docPill + docTitle
-    : paint(themeObj, 'dim', docTitle);
-  const docRightStat = paint(themeObj, 'dim', `${histStr}   ${readingStat}`);
+  const nextTab = state.cur < state.stack.length - 1 && state.stack.length > 1 && columns >= 95
+    ? paint(themeObj, 'dim', '╱')
+      + paintChip(themeObj, ` ${fitLabel(basename(relative(root, state.stack[state.cur + 1].abs)), 14)} `, 'dim', 'calloutBg')
+    : '';
 
-  const columns = stdout.columns || 80;
+  const docTitleText = ' ' + prevTab + activeTab + nextTab;
+  const minChip = paintChip(themeObj, ` ${readingMin} min `, 'success', 'calloutBg');
+  const wordChip = paintChip(themeObj, ` ${wordCount}w `, 'accentPill');
+  const docRightStat = `${histStr} ${minChip}${wordChip}`;
+
   // Build full-width top chrome bar painted with headerBg
   let topBarContent = '';
   if (state.sidebarOpen) {
@@ -972,15 +1071,15 @@ export default function App({
     const sepCell = paint(themeObj, 'dim', '│');
     const docAvail = Math.max(10, columns - 31);
     const leftW = visibleWidth(docTitleText);
-    const rightW = visibleWidth(docRightStat) + 2;
+    const rightW = visibleWidth(docRightStat) + 1;
     const gap = Math.max(1, docAvail - leftW - rightW);
-    const docCell = docTitleText + ' '.repeat(gap) + docRightStat + '  ';
+    const docCell = docTitleText + ' '.repeat(gap) + docRightStat + ' ';
     topBarContent = sbCell + sepCell + docCell;
   } else {
     const leftW = visibleWidth(docTitleText);
-    const rightW = visibleWidth(docRightStat) + 2;
+    const rightW = visibleWidth(docRightStat) + 1;
     const gap = Math.max(1, columns - leftW - rightW);
-    topBarContent = docTitleText + ' '.repeat(gap) + docRightStat + '  ';
+    topBarContent = docTitleText + ' '.repeat(gap) + docRightStat + ' ';
   }
   const paintedTopBar = paintBarRow(topBarContent, columns, themeObj.colors.headerBg);
 
@@ -1025,8 +1124,42 @@ export default function App({
         startCol: Math.max(2, width + 5 - modalW - 2),
       };
     }
+    if (search?.rowOpen) {
+      const matchBadge = search.query
+        ? (matches.length > 0 ? ` [${search.idx + 1}/${matches.length}]` : ' [0/0]')
+        : '';
+      const inputLine = '? ' + search.query + '▌'
+        + (matchBadge ? paint(themeObj, matches.length > 0 ? 'success' : 'warning', matchBadge) : '');
+      const searchModalRows = buildModalBox(
+        'Find (/)',
+        [inputLine],
+        'n/N next/prev · ⏎ keep · Esc',
+        modalW,
+        themeObj,
+      );
+      return {
+        rows: searchModalRows,
+        startRow: 1,
+        startCol: Math.max(2, Math.floor((width + 5 - modalW) / 2)),
+      };
+    }
+    if (toast) {
+      const toastW = Math.min(38, Math.max(24, toast.length + 8));
+      const toastRows = buildModalBox(
+        '✔ Trimd',
+        [paint(themeObj, 'success', toast)],
+        'OSC 52',
+        toastW,
+        themeObj,
+      );
+      return {
+        rows: toastRows,
+        startRow: 1,
+        startCol: Math.max(2, width + 5 - toastW - 2),
+      };
+    }
     return undefined;
-  }, [peekTarget, outlineOpen, activeDocMemo.headings, outlineCursor, contentRows, modalW, themeObj, width]);
+  }, [peekTarget, outlineOpen, search?.rowOpen, search?.query, search?.idx, matches.length, toast, activeDocMemo.headings, outlineCursor, contentRows, modalW, themeObj, width]);
 
   return (
     <Box flexDirection="column" width="100%" height={terminalRows}>
@@ -1037,23 +1170,6 @@ export default function App({
             <Box flexDirection="row" width={columns} height={1}>
               <Text>{paintedTopBar}</Text>
             </Box>
-            {search?.rowOpen && (
-              <Box flexDirection="row" width="100%" height={1}>
-                {state.sidebarOpen ? (
-                  <>
-                    <Box width={30}>
-                      <Text>{' '.repeat(30)}</Text>
-                    </Box>
-                    <Text>{paint(themeObj, 'dim', '│')}</Text>
-                    <Box flexGrow={1}>
-                      <Text>{paint(themeObj, 'search', '? ' + search.query + '▌')}</Text>
-                    </Box>
-                  </>
-                ) : (
-                  <Text>{paint(themeObj, 'search', '? ' + search.query + '▌')}</Text>
-                )}
-              </Box>
-            )}
             <Box flexDirection="row" height={contentRows}>
               {state.sidebarOpen && (
                 <Sidebar
@@ -1120,6 +1236,10 @@ export default function App({
         columns={stdout.columns || 80}
         linkMode={linkMode}
         transientToast={toast}
+        gitBranch={detectGitBranch(root)}
+        gitModCount={detectGitModified(root).size}
+        iconSet={iconSet}
+        isNerd={isNerd}
       />
     </Box>
   );
