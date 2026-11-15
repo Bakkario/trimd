@@ -148,16 +148,27 @@ export function highlightCode(code: string, lang: string | null): string {
   return out;
 }
 
-// ISSUE-005 / ADR-006 (amended) — auto-detect highlighting for `code`/unlabeled
-// fences. `highlight(code)` without a language runs highlight.js
-// `highlightAuto` inside cli-highlight (no new import or dependency).
+// ISSUE-005 / ADR-006 (amended) / ADR-038 — auto-detect highlighting for `code`/unlabeled
+// fences. Uses shebang shortcut first, then a curated 28-language subset
+// (`AUTO_LANGUAGE_SUBSET`) instead of scanning all ~189 highlight.js grammars.
 // Own cache: Map<code, string>.
+export const AUTO_LANGUAGE_SUBSET: readonly string[] = [
+  'bash', 'javascript', 'typescript', 'python', 'json', 'yaml',
+  'rust', 'go', 'c', 'cpp', 'java', 'ruby', 'php', 'sql',
+  'css', 'scss', 'xml', 'ini', 'lua', 'r', 'kotlin', 'swift',
+  'diff', 'dockerfile', 'makefile', 'markdown', 'csharp', 'perl',
+];
+
 const autoCache = new Map<string, string>();
 
 export function highlightAuto(code: string): string {
+  if (code.trim() === '') return code;
   const hit = autoCache.get(code);
   if (hit !== undefined) return hit;
-  const out = highlight(code);
+  const shebang = detectShebangLang(code);
+  const out = shebang && supportsLanguage(shebang)
+    ? highlight(code, { language: shebang })
+    : highlight(code, { languageSubset: [...AUTO_LANGUAGE_SUBSET] });
   autoCache.set(code, out);
   return out;
 }
