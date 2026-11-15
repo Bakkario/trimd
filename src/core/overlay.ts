@@ -25,8 +25,11 @@ export function sliceAnsiByCols(s: string, endCols: number): string {
           continue;
         }
       } else if (s[i + 1] === 'P') {
-        const end = s.indexOf('\x1b\\', i + 2);
+        let end = s.indexOf('\x1b\\', i + 2);
         if (end !== -1) {
+          if (s.slice(end + 2, end + 4) === '\x1b\\') {
+            end += 2;
+          }
           out += s.slice(i, end + 2);
           i = end + 2;
           continue;

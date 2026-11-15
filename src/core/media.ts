@@ -29,7 +29,7 @@ export function renderHalfBlockImage(imgBuf: Buffer, cols: number, rows: number,
 
   const res = spawnSync(
     '/usr/bin/magick',
-    ['-', '-background', '#181b28', '-alpha', 'remove', '-alpha', 'off', '-resize', `${c}x${r * 2}!`, '-depth', '8', 'rgb:-'],
+    ['-', '-background', '#181b28', '-alpha', 'remove', '-alpha', 'off', '-filter', 'Lanczos', '-resize', `${c}x${r * 2}!`, '-depth', '8', 'rgb:-'],
     { input: imgBuf, timeout: 2000, maxBuffer: 10 * 1024 * 1024 },
   );
 
@@ -157,7 +157,7 @@ export function clearImageCache(): void {
   imageCache.clear();
 }
 
-export function loadImageAsPng(absOrUrl: string, maxW = 640, maxH = 240): { png: Buffer; width: number; height: number } | null {
+export function loadImageAsPng(absOrUrl: string, maxW = 960, maxH = 540): { png: Buffer; width: number; height: number } | null {
   const cached = imageCache.get(absOrUrl);
   if (cached) return cached;
 
@@ -223,8 +223,10 @@ export function renderInlineImageRows(absOrUrl: string, width: number, gfx: GfxM
   const img = loadImageAsPng(absOrUrl);
   if (!img) return [];
 
-  const cols = Math.max(16, Math.min(48, width - 6));
-  const rows = 6;
+  const maxCols = Math.max(20, Math.min(72, width - 6));
+  const aspect = img.height > 0 && img.width > 0 ? img.height / img.width : 0.5;
+  const cols = maxCols;
+  const rows = Math.max(8, Math.min(20, Math.round(cols * aspect * 0.5)));
 
   if (gfx === 'kitty') {
     return encodeKittyPng(img.png, cols, rows);

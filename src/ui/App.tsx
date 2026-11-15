@@ -1163,6 +1163,39 @@ export default function App({
     return undefined;
   }, [peekTarget, outlineOpen, search?.rowOpen, search?.query, search?.idx, matches.length, toast, activeDocMemo.headings, outlineCursor, contentRows, modalW, themeObj, width]);
 
+  // Task 14.1 (ISSUE-028) — Emit Kitty APC graphics directly to stdout after Ink renders,
+  // since Ink's text tokenizer drops \x1b_G sequences.
+  useEffect(() => {
+    const delSeq = process.env.TMUX ? '\x1bPtmux;\x1b\x1b_Ga=d,d=A,q=2\x1b\\\x1b\\' : '\x1b_Ga=d,d=A,q=2\x1b\\';
+    if (gfxMode !== 'kitty') {
+      return;
+    }
+    const timer = setTimeout(() => {
+      let placements = '';
+      if (!overlay) {
+        const visible = cur.doc.lines.slice(scrollTop, scrollTop + contentRows);
+        const apcRe = /(?:\x1bPtmux;[\s\S]*?\x1b\\(?:\x1b\\)?|\x1b_G[\s\S]*?\x1b\\)+/g;
+        const baseCol = (state.sidebarOpen ? 31 : 0) + 3;
+        for (let i = 0; i < visible.length; i++) {
+          const lineText = visible[i].text;
+          apcRe.lastIndex = 0;
+          let m: RegExpExecArray | null;
+          while ((m = apcRe.exec(lineText)) !== null) {
+            const termRow = 2 + i;
+            const prefixW = visibleWidth(lineText.slice(0, m.index));
+            const termCol = baseCol + prefixW;
+            placements += `\x1b[${termRow};${termCol}H${m[0]}`;
+          }
+        }
+      }
+      stdout.write(`\x1b7${delSeq}${placements}\x1b8`);
+    }, 15);
+    return () => {
+      clearTimeout(timer);
+      stdout.write(delSeq);
+    };
+  }, [gfxMode, cur.doc, scrollTop, contentRows, state.sidebarOpen, overlay, stdout]);
+
   return (
     <Box flexDirection="column" width="100%" height={terminalRows}>
       {state.help

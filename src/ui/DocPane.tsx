@@ -20,6 +20,11 @@ export interface DocPaneProps {
   };
 }
 
+const stripKittyApc = (s: string): string =>
+  s
+    .replace(/\x1bPtmux;[\s\S]*?\x1b\\(?:\x1b\\)?/g, '')
+    .replace(/\x1b_G[\s\S]*?\x1b\\/g, '');
+
 export default function DocPane({ doc, scrollTop, rows, width, theme, overlay }: DocPaneProps) {
   const total = doc.lines.length;
   const maxTop = Math.max(0, total - rows);
@@ -67,7 +72,7 @@ export default function DocPane({ doc, scrollTop, rows, width, theme, overlay }:
   return (
     <Box flexDirection="column" width={width + 5} height={rows}>
       {finalRows.map((line, i) => (
-        <Text key={start + i}>{line}</Text>
+        <Text key={start + i}>{stripKittyApc(line)}</Text>
       ))}
     </Box>
   );

@@ -2,6 +2,7 @@
 
 import type { Token } from 'markdown-it';
 import { existsSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 import type { FenceBlock, HeadingEntry, LinkSpan, RenderedLine, Theme, ThemeColors } from './types.js';
 import { parseCallout } from './callouts.js';
 import { fenceLabelLang, highlightAuto, highlightCode } from './highlight.js';
@@ -78,7 +79,7 @@ function segsToString(segs: Seg[]): string {
 // 02 §8 — strip ANSI escapes (SGR, OSC 8, Kitty APC, and tmux DCS sequences) from a rendered string.
 export function stripAnsi(s: string): string {
   return s
-    .replace(/\x1bPtmux;[\s\S]*?\x1b\\/g, '')
+    .replace(/\x1bPtmux;[\s\S]*?\x1b\\(?:\x1b\\)?/g, '')
     .replace(/\x1b_G[\s\S]*?\x1b\\/g, '')
     .replace(/\x1b\[[0-9;]*m/g, '')
     .replace(/\x1b\]8;[^\]]*\\/g, '');
@@ -447,7 +448,15 @@ function renderInline(rctx: RenderCtx, children: Token[], base: string[]): Seg[]
         const src = String(rawSrc);
         const base = src.split('/').pop() || src;
         const label = '▣ Image: ' + (alt || base) + ' (' + src + ')';
-        const abs = src.startsWith('/') ? src : rctx.resolve(src);
+        const isHttp = src.startsWith('http://') || src.startsWith('https://');
+        const relCandidate = isHttp ? '' : resolvePath(rctx.sourceDir, src);
+        const abs = isHttp
+          ? null
+          : src.startsWith('/')
+            ? src
+            : existsSync(relCandidate)
+              ? relCandidate
+              : rctx.resolve(src);
         if (abs !== null && existsSync(abs)) {
           out.push({ text: label, sgr: theme.colors.dim || null, link: { href: abs, kind: 'file', resolved: true } });
           if (rctx.gfx && rctx.gfx !== 'none') {
@@ -1065,7 +1074,7 @@ export function renderTokens(tokens: Token[], rctx: RenderCtx): { lines: Rendere
 // fragment. A LinkSpan crossing a wrap is split — each physical fragment
 // gets its own span (same href/kind, remapped line/startCol/endCol).
 
-export interface WTok { text: string; sgr: string | null; url: string | null; }
+export interface WTok { text: string; sgr: string | null; url: string | null; raw?: boolean; }
 
 // SGR parameter bookkeeping for parseLineText. Only the codes chalk (the
 // cli-highlight backend) and paint() actually emit are modelled:
@@ -1128,6 +1137,15 @@ export function parseLineText(text: string): WTok[] {
       }
       i = m + 1;
       runStart = m + 1;
+    } else if (text[i + 1] === '_' || text[i + 1] === 'P') {
+      let end = text.indexOf('\x1b\\', i + 2);
+      if (end === -1) { i++; continue; }
+      if (text[i + 1] === 'P' && text.slice(end + 2, end + 4) === '\x1b\\') {
+        end += 2;
+      }
+      out.push({ text: text.slice(i, end + 2), sgr: null, url: null, raw: true });
+      i = end + 2;
+      runStart = i;
     } else {
       const c1 = text.indexOf('\x1b\\', i);
       const c2 = text.indexOf('\x1b]8;;\x1b\\', c1 + 2);
@@ -1243,6 +1261,10 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
       let col = scanCol;
       for (let i = tokIdx; i < toks.length; i++) {
         const tok = toks[i];
+        if (tok.raw) {
+          units.push({ text: tok.text, tok, oldCol: col });
+          continue;
+        }
         let k = 0;
         while (k < tok.text.length) {
           const space = tok.text[k] === ' ';
@@ -1288,6 +1310,10 @@ export function wrapLines(lines: RenderedLine[], width: number): RenderedLine[] 
       if (cur.length) { physLines.push(cur); cur = []; curW = 0; }
     };
     const emitWord = (ent: { word: string; tok: WTok; oldCol: number }): void => {
+      if (ent.tok.raw) {
+        cur.push({ text: ent.word, tok: ent.tok, oldCol: ent.oldCol, newCol: curW });
+        return;
+      }
       const chars = Array.from(ent.word);
       let idx = 0;
       let charOldCol = ent.oldCol;
