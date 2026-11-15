@@ -584,7 +584,7 @@ function renderOneBlock(ts: Token[], i: number, end: number, rctx: RenderCtx, ou
         out.push(lineSegs);
       }
 
-      if (labelLang === 'mermaid' && rctx.gfx === 'kitty') {
+      if (labelLang === 'mermaid' && rctx.gfx && rctx.gfx !== 'none') {
         const mRows = renderMermaidBlock(rawCode, rctx.width, rctx.gfx, rctx.theme);
         for (const row of mRows) {
           out.push([{ text: row, sgr: null }]);

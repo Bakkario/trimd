@@ -234,76 +234,281 @@ export function renderInlineImageRows(absOrUrl: string, width: number, gfx: GfxM
   return renderHalfBlockImage(img.png, cols, rows, theme.colors.tableBorder);
 }
 
-export function renderMermaidBlock(raw: string, width: number, gfx: GfxMode, theme: Theme): string[] {
-  if (gfx !== 'kitty' || theme.id === 'plain') return [];
+function paintSgr(sgr: string | undefined, text: string): string {
+  return sgr ? `\x1b[${sgr}m${text}\x1b[0m` : text;
+}
 
-  const lines = raw.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('%%') && !l.startsWith('graph ') && !l.startsWith('flowchart '));
-  const nodes = new Map<string, string>();
-  const edges: { from: string; to: string; label?: string }[] = [];
+function parseMermaidNode(rawTok: string): { id: string; label: string } {
+  const t = rawTok.trim();
+  const m = t.match(/^([a-zA-Z0-9_-]+)\s*(?:\[\[(.*?)\]\]|\(\[(.*?)\]\)|\[(.*?)\]|\((.*?)\)|\{(.*?)\})$/);
+  if (m) {
+    const id = m[1];
+    const label = (m[2] ?? m[3] ?? m[4] ?? m[5] ?? m[6] ?? id).replace(/^["']|["']$/g, '').trim() || id;
+    return { id, label };
+  }
+  const idOnly = t.replace(/[^a-zA-Z0-9_-]/g, '') || t;
+  return { id: idOnly, label: idOnly };
+}
+
+function renderSequenceDiagramAscii(lines: string[], width: number, theme: Theme): string[] {
+  const bdrSgr = theme.colors.info || theme.colors.heading2 || '';
+  const lblSgr = theme.colors.bold || '';
+  const dimSgr = theme.colors.dim || '';
+
+  const participants = new Map<string, string>();
+  const messages: { from: string; to: string; label: string }[] = [];
 
   for (const line of lines) {
-    const edgeMatch = line.match(/([a-zA-Z0-9_-]+)(?:\[([^\]]+)\])?\s*-->?(?:\|([^|]+)\|)?\s*([a-zA-Z0-9_-]+)(?:\[([^\]]+)\])?/);
-    if (edgeMatch) {
-      const fromId = edgeMatch[1];
-      const fromLabel = edgeMatch[2] || fromId;
-      const edgeLabel = edgeMatch[3];
-      const toId = edgeMatch[4];
-      const toLabel = edgeMatch[5] || toId;
-
-      if (!nodes.has(fromId)) nodes.set(fromId, fromLabel);
-      if (!nodes.has(toId)) nodes.set(toId, toLabel);
-      edges.push({ from: fromId, to: toId, label: edgeLabel });
+    if (line.startsWith('sequenceDiagram') || line.startsWith('%%')) continue;
+    const pMatch = line.match(/^participant\s+([a-zA-Z0-9_-]+)(?:\s+as\s+(.+))?$/);
+    if (pMatch) {
+      participants.set(pMatch[1], (pMatch[2] || pMatch[1]).trim());
+      continue;
+    }
+    const mMatch = line.match(/^([a-zA-Z0-9_-]+)\s*-{1,2}>{1,2}[+-]?\s*([a-zA-Z0-9_-]+)\s*:\s*(.*)$/);
+    if (mMatch) {
+      const [, from, to, label] = mMatch;
+      if (!participants.has(from)) participants.set(from, from);
+      if (!participants.has(to)) participants.set(to, to);
+      messages.push({ from, to, label: label.trim() });
     }
   }
 
-  const nodeList = Array.from(nodes.entries());
-  if (nodeList.length === 0) return [];
+  const pList = Array.from(participants.entries());
+  if (pList.length === 0) return [];
 
-  const svgW = 440;
-  const svgH = 120;
-  const stepX = Math.floor((svgW - 80) / Math.max(1, nodeList.length));
-
-  const nodeElements = nodeList.map(([id, label], idx) => {
-    const x = 30 + idx * stepX;
-    const y = 40;
-    return `
-      <rect x="${x}" y="${y}" width="70" height="35" rx="5" fill="#24283b" stroke="#7aa2f7" stroke-width="2"/>
-      <text x="${x + 35}" y="${y + 22}" fill="#c0caf5" font-family="sans-serif" font-size="11" text-anchor="middle">${label.replace(/[<>&'"]/g, '')}</text>
-    `;
-  }).join('');
-
-  const edgeElements = edges.map((e) => {
-    const fromIdx = nodeList.findIndex(([id]) => id === e.from);
-    const toIdx = nodeList.findIndex(([id]) => id === e.to);
-    if (fromIdx < 0 || toIdx < 0) return '';
-    const x1 = 30 + fromIdx * stepX + 70;
-    const x2 = 30 + toIdx * stepX;
-    const y = 57;
-    return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="#7aa2f7" stroke-width="2" marker-end="url(#arr)"/>`;
-  }).join('');
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}">
-    <defs>
-      <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-        <path d="M0,0 L0,6 L8,3 z" fill="#7aa2f7" />
-      </marker>
-    </defs>
-    <rect width="100%" height="100%" fill="#16161e" rx="6"/>
-    ${edgeElements}
-    ${nodeElements}
-  </svg>`;
-
-  try {
-    const res = spawnSync('/usr/bin/magick', ['svg:-', 'png:-'], {
-      input: Buffer.from(svg, 'utf8'),
-      timeout: 1500,
-    });
-    if (res.status === 0 && res.stdout && res.stdout.length > 0) {
-      const cols = Math.max(16, Math.min(48, width - 6));
-      return encodeKittyPng(res.stdout, cols, 6);
-    }
-  } catch {
-    // fallback
+  const maxColW = Math.max(10, Math.floor((width - 4) / pList.length) - 2);
+  const maxMsgLen = messages.reduce((m, msg) => Math.max(m, msg.label.length), 0);
+  const minBoxW = Math.min(maxColW, Math.max(7, Math.min(maxMsgLen + 4, Math.floor((width - 8) / pList.length) - 4)));
+  const boxWidths = pList.map(([, label]) => Math.min(maxColW, Math.max(label.length + 2, minBoxW)));
+  const gap = Math.max(4, Math.min(12, Math.floor((width - 4 - boxWidths.reduce((a, b) => a + b + 2, 0)) / Math.max(1, pList.length - 1))));
+  const centers: number[] = [];
+  let curX = 2;
+  for (let idx = 0; idx < pList.length; idx++) {
+    const bw = boxWidths[idx] + 2; // +2 for │ │
+    centers.push(curX + Math.floor(bw / 2));
+    curX += bw + gap;
   }
-  return [];
+
+  const out: string[] = [];
+  // Top boxes
+  let topRow = '  ';
+  let midRow = '  ';
+  let botRow = '  ';
+  for (let idx = 0; idx < pList.length; idx++) {
+    const [, label] = pList[idx];
+    const iw = boxWidths[idx];
+    const clipped = label.length > iw - 2 ? label.slice(0, iw - 3) + '…' : label;
+    const padL = Math.floor((iw - clipped.length) / 2);
+    const padR = iw - clipped.length - padL;
+    const sep = idx < pList.length - 1 ? ' '.repeat(gap) : '';
+    topRow += paintSgr(bdrSgr, `╭${'─'.repeat(iw)}╮`) + sep;
+    midRow += paintSgr(bdrSgr, '│') + ' '.repeat(padL) + paintSgr(lblSgr, clipped) + ' '.repeat(padR) + paintSgr(bdrSgr, '│') + sep;
+    botRow += paintSgr(bdrSgr, `╰${'─'.repeat(iw)}╯`) + sep;
+  }
+  out.push(topRow.trimEnd(), midRow.trimEnd(), botRow.trimEnd());
+
+  const totalW = Math.max(...centers) + 4;
+  const makeLifeline = (): string[] => {
+    const arr = Array.from({ length: totalW }, () => ' ');
+    for (const c of centers) arr[c] = '│';
+    return arr;
+  };
+
+  for (const msg of messages) {
+    const fi = pList.findIndex(([id]) => id === msg.from);
+    const ti = pList.findIndex(([id]) => id === msg.to);
+    if (fi < 0 || ti < 0) continue;
+    const fc = centers[fi];
+    const tc = centers[ti];
+    // Spacer lifeline
+    out.push(paintSgr(dimSgr, makeLifeline().join('').trimEnd()));
+
+    if (fi === ti) {
+      const arr = makeLifeline();
+      const text = `──▶ ${msg.label}`;
+      const lineStr = arr.join('').slice(0, fc + 1) + paintSgr(lblSgr, text);
+      out.push(lineStr);
+      continue;
+    }
+
+    const left = Math.min(fc, tc);
+    const right = Math.max(fc, tc);
+    const span = right - left - 1;
+    const lbl = msg.label.length > Math.max(0, span - 4) ? msg.label.slice(0, Math.max(0, span - 5)) + '…' : msg.label;
+    const lblWithSpace = lbl ? ` ${lbl} ` : '';
+    const dashTotal = Math.max(1, span - lblWithSpace.length - 1);
+    const dashL = Math.floor(dashTotal / 2);
+    const dashR = dashTotal - dashL;
+
+    const arrowBody = fi < ti
+      ? `${'─'.repeat(dashL)}${lblWithSpace}${'─'.repeat(dashR)}▶`
+      : `◀${'─'.repeat(dashL)}${lblWithSpace}${'─'.repeat(dashR)}`;
+
+    const prefixArr = makeLifeline().slice(0, left + 1);
+    const suffixArr = makeLifeline().slice(right);
+    const row = paintSgr(dimSgr, prefixArr.join(''))
+      + paintSgr(bdrSgr, arrowBody)
+      + paintSgr(dimSgr, suffixArr.join('').trimEnd());
+    out.push(row);
+  }
+  out.push(paintSgr(dimSgr, makeLifeline().join('').trimEnd()));
+  return out;
+}
+
+export function renderMermaidAscii(raw: string, width: number, theme: Theme): string[] {
+  const lines = raw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('%%'));
+  if (lines.length === 0) return [];
+
+  if (lines[0].startsWith('sequenceDiagram')) {
+    return renderSequenceDiagramAscii(lines, width, theme);
+  }
+
+  let dir: 'LR' | 'TD' = 'TD';
+  const header = lines.find((l) => /^(graph|flowchart)\s+/i.test(l));
+  if (header && /\b(LR|RL)\b/i.test(header)) {
+    dir = 'LR';
+  }
+
+  const nodes = new Map<string, string>();
+  const edges: { from: string; to: string; label?: string }[] = [];
+  const edgeOpRe = /\s*(?:--+\s*([^-\n>]+?)\s*--+>|-.->(?:\|([^|]+)\|)?|==+>(?:\|([^|]+)\|)?|-->?(?:\|([^|]+)\|)?)\s*/;
+
+  for (const line of lines) {
+    if (/^(graph|flowchart|subgraph|end|classDef|class|style|linkStyle|click)\b/i.test(line)) continue;
+    // Support chained edges like A --> B --> C
+    let rest = line;
+    let match = edgeOpRe.exec(rest);
+    if (!match) {
+      // Standalone node declaration
+      if (/^[a-zA-Z0-9_-]+\s*[\[\(\{]/.test(rest)) {
+        const n = parseMermaidNode(rest);
+        if (!nodes.has(n.id)) nodes.set(n.id, n.label);
+      }
+      continue;
+    }
+    while (match) {
+      const leftStr = rest.slice(0, match.index);
+      const afterStr = rest.slice(match.index + match[0].length);
+      const nextMatch = edgeOpRe.exec(afterStr);
+      const rightStr = nextMatch ? afterStr.slice(0, nextMatch.index) : afterStr;
+      const fromNode = parseMermaidNode(leftStr);
+      const toNode = parseMermaidNode(rightStr);
+      if (!nodes.has(fromNode.id) || fromNode.label !== fromNode.id) nodes.set(fromNode.id, fromNode.label);
+      if (!nodes.has(toNode.id) || toNode.label !== toNode.id) nodes.set(toNode.id, toNode.label);
+      const edgeLabel = (match[1] ?? match[2] ?? match[3] ?? match[4] ?? '').trim() || undefined;
+      edges.push({ from: fromNode.id, to: toNode.id, label: edgeLabel });
+      if (!nextMatch) break;
+      rest = afterStr;
+      match = nextMatch;
+    }
+  }
+
+  if (nodes.size === 0) return [];
+
+  const bdrSgr = theme.colors.info || theme.colors.heading2 || '';
+  const lblSgr = theme.colors.bold || '';
+  const dimSgr = theme.colors.dim || '';
+
+  const makeBox = (label: string, maxW: number): [string, string, string, number] => {
+    const clipped = label.length > maxW - 4 ? label.slice(0, maxW - 5) + '…' : label;
+    const iw = clipped.length + 2;
+    return [
+      paintSgr(bdrSgr, `╭${'─'.repeat(iw)}╮`),
+      paintSgr(bdrSgr, '│') + ' ' + paintSgr(lblSgr, clipped) + ' ' + paintSgr(bdrSgr, '│'),
+      paintSgr(bdrSgr, `╰${'─'.repeat(iw)}╯`),
+      iw + 2,
+    ];
+  };
+
+  if (dir === 'LR' && edges.length > 0) {
+    // Render edges horizontally, wrapping to new row when exceeding width
+    const out: string[] = [];
+    const maxBoxW = Math.max(12, Math.floor((width - 10) / 2));
+    let rowTop = '  ';
+    let rowMid = '  ';
+    let rowBot = '  ';
+    let curW = 2;
+    let lastTo: string | null = null;
+
+    const flushRow = (): void => {
+      if (curW > 2) {
+        out.push(rowTop.trimEnd(), rowMid.trimEnd(), rowBot.trimEnd(), '');
+        rowTop = '  ';
+        rowMid = '  ';
+        rowBot = '  ';
+        curW = 2;
+      }
+    };
+
+    for (const e of edges) {
+      const arrowText = e.label ? `── ${e.label} ──▶` : '───▶';
+      const arrowW = arrowText.length + 2;
+      const toBox = makeBox(nodes.get(e.to) ?? e.to, maxBoxW);
+
+      if (lastTo === e.from && curW + arrowW + toBox[3] <= width - 2) {
+        rowTop += ' '.repeat(arrowW) + toBox[0];
+        rowMid += ' ' + paintSgr(bdrSgr, arrowText) + ' ' + toBox[1];
+        rowBot += ' '.repeat(arrowW) + toBox[2];
+        curW += arrowW + toBox[3];
+        lastTo = e.to;
+      } else {
+        flushRow();
+        const fromBox = makeBox(nodes.get(e.from) ?? e.from, maxBoxW);
+        if (2 + fromBox[3] + arrowW + toBox[3] <= width - 2) {
+          rowTop += fromBox[0] + ' '.repeat(arrowW) + toBox[0];
+          rowMid += fromBox[1] + ' ' + paintSgr(bdrSgr, arrowText) + ' ' + toBox[1];
+          rowBot += fromBox[2] + ' '.repeat(arrowW) + toBox[2];
+          curW += fromBox[3] + arrowW + toBox[3];
+          lastTo = e.to;
+        } else {
+          // Too wide for single horizontal line: stack vertically
+          out.push('  ' + fromBox[0], '  ' + fromBox[1], '  ' + fromBox[2]);
+          const midX = ' '.repeat(Math.max(2, Math.floor(fromBox[3] / 2) + 2));
+          out.push(midX + paintSgr(bdrSgr, '│') + (e.label ? ' ' + paintSgr(dimSgr, e.label) : ''));
+          out.push(midX + paintSgr(bdrSgr, '▼'));
+          out.push('  ' + toBox[0], '  ' + toBox[1], '  ' + toBox[2], '');
+          lastTo = null;
+        }
+      }
+    }
+    flushRow();
+    while (out.length > 0 && out[out.length - 1] === '') out.pop();
+    return out;
+  }
+
+  // TD / TB vertical layout
+  const out: string[] = [];
+  const maxBoxW = Math.max(16, width - 6);
+  if (edges.length === 0) {
+    for (const [, lbl] of nodes) {
+      const b = makeBox(lbl, maxBoxW);
+      out.push('  ' + b[0], '  ' + b[1], '  ' + b[2]);
+    }
+    return out;
+  }
+
+  let lastTo: string | null = null;
+  for (const e of edges) {
+    const fromBox = makeBox(nodes.get(e.from) ?? e.from, maxBoxW);
+    const toBox = makeBox(nodes.get(e.to) ?? e.to, maxBoxW);
+    if (lastTo !== e.from) {
+      if (lastTo !== null) out.push('');
+      out.push('  ' + fromBox[0], '  ' + fromBox[1], '  ' + fromBox[2]);
+    }
+    const connPad = ' '.repeat(Math.max(2, Math.floor((lastTo === e.from ? toBox[3] : fromBox[3]) / 2) + 2));
+    out.push(connPad + paintSgr(bdrSgr, '│') + (e.label ? ' ' + paintSgr(dimSgr, e.label) : ''));
+    out.push(connPad + paintSgr(bdrSgr, '▼'));
+    out.push('  ' + toBox[0], '  ' + toBox[1], '  ' + toBox[2]);
+    lastTo = e.to;
+  }
+  return out;
+}
+
+export function renderMermaidBlock(raw: string, width: number, gfx: GfxMode, theme: Theme): string[] {
+  if (gfx === 'none' || theme.id === 'plain') return [];
+  return renderMermaidAscii(raw, width, theme);
 }
