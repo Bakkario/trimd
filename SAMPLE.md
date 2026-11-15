@@ -6,20 +6,22 @@ author: Trimd Team
 tags:
   - trimd
   - markdown
-  - obsidian
+  - docs
   - kitty
   - terminal
 ---
 
 # Welcome to Trimd 8-)
 
-Hey there! If you are reading this inside **Trimd**, you are looking at a live terminal Markdown, Obsidian, and code viewer built to keep your hands on the keyboard (or mouse!) without leaving your terminal or SSH session.
+Hey there! If you are reading this inside **Trimd**, you are looking at a live terminal **Markdown, documentation, and code viewer** — built for browsing anything from a GitHub repo's `docs/` folder, technical specs, and `README.md` files to personal wikis and Obsidian vaults, right inside your terminal or SSH session.
+
+One of Trimd's best features is **instant in-app navigation**: click any local link (or press `l` to jump by keyboard) to open linked documents right in the reader, peek targets in a floating modal with `p`, and move back/forward through your reading history with `B` / `F` (or `Esc`).
 
 > [!TIP] Quick Controls While You Read
 > - Press `T` to cycle themes (`tokyo-night`, `dracula`, `default`, `light`, `plain`).
 > - Press `i` to toggle graphics mode (`kitty` ↔ `halfblock` ↔ `none`).
 > - Press `m` to expand/collapse the YAML frontmatter card above.
-> - Press `/` to search, `o` for the heading outline, `f` for keyboard link hints, or `?` for the full keymap.
+> - Press `/` to search, `l` for keyboard link hints, `o` for the heading outline, `p` to peek a link, or `?` for the full keymap.
 > - **Click & drag** any text in this pane to highlight and auto-copy it to your clipboard over **OSC 52** (works seamlessly over SSH & `tmux`!).
 
 ---
@@ -44,7 +46,7 @@ Blockquotes keep their vertical `│` bars cleanly across wrapped lines and nest
 >> Level 2: Nested quotes stack cleanly with double borders.
 > > > Level 3: Even deeply nested commentary stays readable at any terminal width.
 
-For structured notes, Trimd supports both **Obsidian Callouts** and **Custom Containers**:
+For structured docs and notes, Trimd supports both **Callouts** (`[!NOTE]`, `[!TIP]`, `[!WARNING]`, …) and **Custom Containers**:
 
 > [!NOTE] Pure Core Rendering
 > Trimd parses Markdown, LaTeX, Mermaid diagrams, and syntax highlighting into pure ANSI lines before Ink renders the TUI.
@@ -60,21 +62,21 @@ For structured notes, Trimd supports both **Obsidian Callouts** and **Custom Con
 
 ## 3. Lists & Interactive Checklists
 
-Mix unordered bullets, ordered steps, and Obsidian-style task lists:
+Mix unordered bullets, ordered steps, and interactive task lists:
 
 - Unordered lists indent 2 spaces per level:
   - Sub-items align cleanly under their parent
     * Even when marker styles (`-`, `+`, `*`) change
 - Ordered lists:
-  1. Open any file (`trimd README.md`) or pipe stdin (`cat notes.md | trimd`)
+  1. Open any file (`trimd README.md`) or pipe stdin (`cat docs/guide.md | trimd`)
   2. Highlight code with `--lang` (`trimd app.ts` or `cat script.py | trimd`)
-  3. Navigate your vault using the sidebar (`Tab` or `←`/`→`)
+  3. Browse your repo, `docs/` folder, or vault using the sidebar (`Tab` or `←`/`→`)
 
 Task checklist:
 - [x] Full-width Lualine status bar & Bufferline tab chrome
 - [x] Mouse drag-to-copy via `OSC 52` (local & SSH)
 - [x] Smooth cached Kitty graphics & Unicode Mermaid diagrams
-- [ ] Try pressing `f` to jump to any link using keyboard hints!
+- [ ] Try pressing `l` to jump to any link using keyboard hints!
 
 ---
 
@@ -109,8 +111,8 @@ Tables render with rounded Unicode borders (`╭─┬─╮`) and automatically
 | -------- | ------ | ------- |
 | `↑` / `↓` or `j` / `k` | Scroll line by line | Document / Sidebar |
 | `←` / `→` | Switch focus between panes | Split view |
-| `f` | Show keyboard link hints | Document |
-| `p` | Peek wikilink target in a floating modal | Document |
+| `l` | Show keyboard link hints (press number + `Enter` to open) | Document |
+| `p` | Peek link target in a floating modal | Document |
 
 Right-aligned numeric columns work too:
 
@@ -122,15 +124,16 @@ Right-aligned numeric columns work too:
 
 ---
 
-## 6. Links, Obsidian Wikilinks & Embeds
+## 6. Cross-Document Links, Wikilinks & Embeds
 
-Trimd connects your local notes and external references together:
+Whether you're reading a GitHub repo's `docs/` directory, architecture specs, or a personal knowledge base, Trimd turns document links into **first-class in-app navigation** — click any link or press `l` to follow it, `p` to preview it, and `B`/`F` to step back and forward:
 
-- Standard web links: [Trimd on GitHub](https://github.com) or auto-linked https://obsidian.md
-- Resolved wikilinks (click or use `f` to navigate, `p` to peek): [[README]] and [[README|Project README]]
-- Unresolved wikilinks safely show a dim warning instead of crashing: [[NonExistent_Note]]
-- Inline Obsidian tags: #trimd/v0.3 #terminal/tui #markdown
-- Note embeds inline a clean preview card:
+- Relative Markdown links (click or press `l` to open in-app): [Project README](README.md)
+- Wikilinks (great for wikis & vaults): [[README]] and [[README|Project README]]
+- Standard web links (opens in browser locally, or copies via OSC 52 over SSH): [Trimd on GitHub](https://github.com) or auto-linked https://commonmark.org
+- Unresolved links safely show a dim warning instead of crashing: [[NonExistent_Doc]]
+- Inline tags: #trimd/v0.3 #terminal/tui #markdown
+- Document embeds inline a clean preview card right where they're referenced:
 
 ![[README]]
 
@@ -144,7 +147,7 @@ Local asset (`test/fixtures/sample-diagram.png`):
 
 ![Trimd Pipeline Diagram](test/fixtures/sample-diagram.png)
 
-Obsidian-style image embed:
+Standard Markdown image embed (`![[...]]`) also works:
 
 ![[sample-diagram.png]]
 
@@ -209,7 +212,7 @@ Fenced `math` blocks:
 - **Definition Lists:**
 
 Trimd
-: A fast, terminal-native Markdown and Obsidian reader with mouse support, themes, and graphics.
+: A fast, terminal-native Markdown, documentation, and code reader with in-app link navigation, mouse support, themes, and graphics.
 
 Kitty Graphics Protocol
 : High-resolution terminal image protocol using `\x1b_G` APC sequences with image ID caching.
