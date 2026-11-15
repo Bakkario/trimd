@@ -73,8 +73,10 @@ export function buildModalBox(
   const bdr = (ch: string) => `\x1b[${bdrSgr}${bgSgr}m${ch}\x1b[0m`;
   const bgWrap = (text: string, textVis: number) => {
     const pad = Math.max(0, innerW - textVis);
-    const fill = text + ' '.repeat(pad);
-    return bgSgr ? `\x1b[${bgSgr.slice(1)}m${fill}\x1b[0m` : fill;
+    if (!bgSgr) return text + ' '.repeat(pad);
+    const bgEsc = `\x1b[${bgSgr.slice(1)}m`;
+    const safeText = text.replace(/\x1b\[0m/g, `\x1b[0m${bgEsc}`);
+    return `${bgEsc}${safeText}${' '.repeat(pad)}\x1b[0m`;
   };
 
   const rows: string[] = [];
@@ -82,7 +84,7 @@ export function buildModalBox(
   // Top border: ╭─ ◈ <title> ────╮
   const titleText = `◈ ${title} `;
   const titleVis = visibleWidth(titleText);
-  const topDashes = Math.max(1, innerW - 1 - titleVis);
+  const topDashes = Math.max(1, innerW - 2 - titleVis);
   const topRowInner = `─ ${titleText}${'─'.repeat(topDashes)}`;
   const topRow = bdr('╭') + (bgSgr ? `\x1b[1;${bdrSgr}${bgSgr}m${topRowInner}\x1b[0m` : `\x1b[1;${bdrSgr}m${topRowInner}\x1b[0m`) + bdr('╮');
   rows.push(topRow);

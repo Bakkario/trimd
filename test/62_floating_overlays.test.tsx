@@ -250,3 +250,24 @@ test('App p key displays toast when no link is in view', async () => {
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('buildModalBox preserves headerBg across inner ANSI resets and handles empty footerHint (ISSUE-032)', () => {
+  const theme = {
+    ...DEFAULT_THEME,
+    colors: {
+      ...DEFAULT_THEME.colors,
+      headerBg: '48;5;236',
+    },
+  };
+  const body = `\x1b[32mCopied 11 chars\x1b[0m`;
+  const rows = buildModalBox('✔ Trimd', [body], '', 30, theme);
+  assert.equal(rows.length, 3, 'top + body + bottom');
+  // Body row (index 1) must re-assert 48;5;236 after \x1b[0m so trailing pad spaces keep modal background
+  assert.ok(rows[1].includes('\x1b[0m\x1b[48;5;236m'), 're-asserts headerBg after inner reset');
+  // All rows must have identical visible width (30)
+  for (const row of rows) {
+    assert.equal(stripAnsi(row).length, 30, `row width 30: ${stripAnsi(row)}`);
+  }
+  // No OSC 52 label in footer
+  assert.ok(!stripAnsi(rows[rows.length - 1]).includes('OSC 52'));
+});

@@ -484,7 +484,7 @@ export default function App({
             const selectedText = extractSelectionText(doc.lines, anchor, { line: releaseLine, col: releaseCol });
             if (selectedText.length > 0) {
               stdout.write(encodeOsc52(selectedText, process.env));
-              setToast(`Copied ${selectedText.length} chars (OSC 52)`);
+              setToast(`Copied ${selectedText.length} chars`);
               setTimeout(() => setToast(null), 2000);
             }
             if (st.focus !== 'doc') setState((s) => ({ ...s, focus: 'doc' }));
@@ -1208,7 +1208,7 @@ export default function App({
       const toastRows = buildModalBox(
         '✔ Trimd',
         [paint(themeObj, 'success', toast)],
-        'OSC 52',
+        '',
         toastW,
         themeObj,
       );
