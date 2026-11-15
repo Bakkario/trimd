@@ -1,11 +1,6 @@
 import { openSync, readFileSync } from 'node:fs';
 import tty from 'node:tty';
-import { render } from 'ink';
 import { dirname, resolve as resolvePath } from 'node:path';
-import App from './ui/App.js';
-import { renderFile, renderText } from './core/pipeline.js';
-import { detectGfxMode } from './core/media.js';
-import { resolveTheme, allThemeIds } from './core/themes.js';
 import { defaultConfigPath, loadConfig, mergeConfig, parseArgs, VERSION } from './core/config.js';
 import { ConfigError, FileError, FileMissingError, UsageError } from './core/types.js';
 import type { Config, RenderedDoc, Theme } from './core/types.js';
@@ -66,96 +61,114 @@ if (file === null && !isPiped) {
   process.exit(3);
 }
 
-// 02 §4 — config file: --config <path> or $XDG_CONFIG_HOME/trimd/config.json
-// (else ~/.config/trimd/config.json); missing/empty → DEFAULTS; flags beat
-// config beat defaults (INV-4.1).
-const configPath = flags.config !== undefined ? resolvePath(process.cwd(), flags.config) : defaultConfigPath();
-let cfg: Config;
-try {
-  cfg = loadConfig(configPath);
-} catch (err) {
-  fail(err, !!flags.debug);
-}
-const merged = mergeConfig(cfg, flags);
+async function main(): Promise<void> {
+  const [
+    { render },
+    { default: App },
+    { renderFile, renderText },
+    { detectGfxMode },
+    { resolveTheme, allThemeIds },
+  ] = await Promise.all([
+    import('ink'),
+    import('./ui/App.js'),
+    import('./core/pipeline.js'),
+    import('./core/media.js'),
+    import('./core/themes.js'),
+  ]);
 
-const abs = isPiped ? '<stdin>' : resolvePath(process.cwd(), file!);
-const root = flags.root !== undefined
-  ? resolvePath(process.cwd(), flags.root)
-  : (isPiped ? process.cwd() : dirname(abs));
-
-// 02 §4 — NO_COLOR/TERM=dumb → PLAIN_THEME before any theme lookup.
-// 02 §3 — unknown theme id (after allThemeIds()) → `trimd: theme: unknown theme '<id>'`, exit 3.
-let theme: Theme;
-try {
-  const themeId = flags.theme !== undefined ? flags.theme : merged.theme;
-  if (!allThemeIds().includes(themeId)) {
-    throw new ConfigError("theme: unknown theme '" + themeId + "'");
-  }
-  theme = resolveTheme(process.env, flags, merged);
-} catch (err) {
-  fail(err, !!flags.debug);
-}
-
-const sidebarOpen = isPiped && flags.root === undefined ? false : merged.sidebarOpen;
-const showFrontmatter = merged.showFrontmatter;
-const showHidden = merged.showHidden;
-const cols = process.stdout.columns ?? 80;
-const width = merged.width ?? Math.max(cols - (sidebarOpen ? 31 : 0) - 5, 40);
-const resolvedGfx = detectGfxMode(process.env, merged.gfx);
-
-let doc: RenderedDoc;
-try {
-  if (isPiped) {
-    const stdinText = readFileSync(0, 'utf8');
-    doc = renderText(stdinText, '<stdin>', {
-      root,
-      width,
-      theme,
-      showFrontmatter,
-      showHidden,
-      gfx: resolvedGfx,
-      lang: flags.lang,
-    });
-  } else {
-    doc = renderFile(abs, {
-      root,
-      width,
-      theme,
-      showFrontmatter,
-      showHidden,
-      gfx: resolvedGfx,
-      lang: flags.lang,
-    });
-  }
-} catch (err) {
-  fail(err, !!flags.debug);
-}
-
-let ttyIn: tty.ReadStream | undefined;
-if (isPiped) {
+  // 02 §4 — config file: --config <path> or $XDG_CONFIG_HOME/trimd/config.json
+  // (else ~/.config/trimd/config.json); missing/empty → DEFAULTS; flags beat
+  // config beat defaults (INV-4.1).
+  const configPath = flags.config !== undefined ? resolvePath(process.cwd(), flags.config) : defaultConfigPath();
+  let cfg: Config;
   try {
-    const ttyFd = openSync('/dev/tty', 'r');
-    ttyIn = new tty.ReadStream(ttyFd);
-  } catch {
-    fail(new FileError('cannot open /dev/tty for interactive input'), !!flags.debug);
+    cfg = loadConfig(configPath);
+  } catch (err) {
+    fail(err, !!flags.debug);
+  }
+  const merged = mergeConfig(cfg, flags);
+
+  const abs = isPiped ? '<stdin>' : resolvePath(process.cwd(), file!);
+  const root = flags.root !== undefined
+    ? resolvePath(process.cwd(), flags.root)
+    : (isPiped ? process.cwd() : dirname(abs));
+
+  // 02 §4 — NO_COLOR/TERM=dumb → PLAIN_THEME before any theme lookup.
+  // 02 §3 — unknown theme id (after allThemeIds()) → `trimd: theme: unknown theme '<id>'`, exit 3.
+  let theme: Theme;
+  try {
+    const themeId = flags.theme !== undefined ? flags.theme : merged.theme;
+    if (!allThemeIds().includes(themeId)) {
+      throw new ConfigError("theme: unknown theme '" + themeId + "'");
+    }
+    theme = resolveTheme(process.env, flags, merged);
+  } catch (err) {
+    fail(err, !!flags.debug);
+  }
+
+  const sidebarOpen = isPiped && flags.root === undefined ? false : merged.sidebarOpen;
+  const showFrontmatter = merged.showFrontmatter;
+  const showHidden = merged.showHidden;
+  const cols = process.stdout.columns ?? 80;
+  const width = merged.width ?? Math.max(cols - (sidebarOpen ? 31 : 0) - 5, 40);
+  const resolvedGfx = detectGfxMode(process.env, merged.gfx);
+
+  let doc: RenderedDoc;
+  try {
+    if (isPiped) {
+      const stdinText = readFileSync(0, 'utf8');
+      doc = renderText(stdinText, '<stdin>', {
+        root,
+        width,
+        theme,
+        showFrontmatter,
+        showHidden,
+        gfx: resolvedGfx,
+        lang: flags.lang,
+      });
+    } else {
+      doc = renderFile(abs, {
+        root,
+        width,
+        theme,
+        showFrontmatter,
+        showHidden,
+        gfx: resolvedGfx,
+        lang: flags.lang,
+      });
+    }
+  } catch (err) {
+    fail(err, !!flags.debug);
+  }
+
+  let ttyIn: tty.ReadStream | undefined;
+  if (isPiped) {
+    try {
+      const ttyFd = openSync('/dev/tty', 'r');
+      ttyIn = new tty.ReadStream(ttyFd);
+    } catch {
+      fail(new FileError('cannot open /dev/tty for interactive input'), !!flags.debug);
+    }
+  }
+
+  const inst = render(
+    <App
+      doc={doc}
+      root={root}
+      theme={theme}
+      themeId={theme.id}
+      sidebarOpen={sidebarOpen}
+      showHidden={showHidden}
+      showFrontmatter={showFrontmatter}
+      gfx={resolvedGfx}
+      icons={flags.icons ?? merged.icons}
+    />,
+    ttyIn ? { stdin: ttyIn } : undefined,
+  );
+
+  if (ttyIn) {
+    inst.waitUntilExit().finally(() => ttyIn?.destroy());
   }
 }
 
-const inst = render(
-  <App
-    doc={doc}
-    root={root}
-    theme={theme}
-    themeId={theme.id}
-    sidebarOpen={sidebarOpen}
-    showHidden={showHidden}
-    showFrontmatter={showFrontmatter}
-    gfx={resolvedGfx}
-    icons={flags.icons ?? merged.icons}
-  />,
-  ttyIn ? { stdin: ttyIn } : undefined,
-);
-
-if (ttyIn) {
-  inst.waitUntilExit().finally(() => ttyIn?.destroy());
-}
+void main();

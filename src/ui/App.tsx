@@ -330,16 +330,44 @@ export default function App({
     return list;
   }, [cur.abs, docMemo]);
 
-  const activeBacklinks = useMemo(() => {
-    try {
-      const idx = buildIndex(root, showHidden);
-      const map = buildBacklinkIndex(root, idx);
-      const sources = map.get(cur.abs) ?? [];
-      return sources.map((s) => basename(s));
-    } catch {
-      return [];
-    }
-  }, [cur.abs, root, showHidden, state.reloadTick]);
+  const [activeBacklinks, setActiveBacklinks] = useState<string[]>([]);
+  useEffect(() => {
+    if (!state.sidebarOpen) return;
+    let cancelled = false;
+    const handle = setImmediate(() => {
+      if (cancelled) return;
+      try {
+        const idx = buildIndex(root, showHidden);
+        const map = buildBacklinkIndex(root, idx);
+        const sources = map.get(cur.abs) ?? [];
+        setActiveBacklinks(sources.map((s) => basename(s)));
+      } catch {
+        setActiveBacklinks([]);
+      }
+    });
+    return () => {
+      cancelled = true;
+      clearImmediate(handle);
+    };
+  }, [cur.abs, root, showHidden, state.reloadTick, state.sidebarOpen]);
+
+  const [gitState, setGitState] = useState<{ modAbs: ReadonlySet<string>; branch: string | null }>({
+    modAbs: new Set(),
+    branch: null,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    const handle = setImmediate(() => {
+      if (cancelled) return;
+      const modAbs = detectGitModified(root);
+      const branch = detectGitBranch(root);
+      setGitState({ modAbs, branch });
+    });
+    return () => {
+      cancelled = true;
+      clearImmediate(handle);
+    };
+  }, [root, state.reloadTick]);
   const total = activeDocMemo.lines.length;
   const maxTop = Math.max(0, total - contentRows);
   const scrollTop = Math.min(cur.scrollTop, maxTop);
@@ -1310,7 +1338,7 @@ export default function App({
                   focused={state.focus === 'sidebar'}
                   cwdLabel={state.cwd === root ? (basename(root) || 'vault') : (relative(root, state.cwd) || basename(state.cwd))}
                   sortBy={sidebarSort}
-                  gitModAbs={detectGitModified(root)}
+                  gitModAbs={gitState.modAbs}
                   outgoingLinks={activeOutgoingLinks}
                   backlinks={activeBacklinks}
                   iconSet={iconSet}
@@ -1361,8 +1389,8 @@ export default function App({
         columns={stdout.columns || 80}
         linkMode={linkMode}
         transientToast={toast}
-        gitBranch={detectGitBranch(root)}
-        gitModCount={detectGitModified(root).size}
+        gitBranch={gitState.branch}
+        gitModCount={gitState.modAbs.size}
         iconSet={iconSet}
         isNerd={isNerd}
       />
