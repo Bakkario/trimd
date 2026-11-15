@@ -5,7 +5,7 @@ import { dirname, resolve as resolvePath } from 'node:path';
 import App from './ui/App.js';
 import { renderFile, renderText } from './core/pipeline.js';
 import { resolveTheme, allThemeIds } from './core/themes.js';
-import { defaultConfigPath, loadConfig, mergeConfig, parseArgs } from './core/config.js';
+import { defaultConfigPath, loadConfig, mergeConfig, parseArgs, VERSION } from './core/config.js';
 import { ConfigError, FileError, FileMissingError, UsageError } from './core/types.js';
 import type { Config, RenderedDoc, Theme } from './core/types.js';
 
@@ -24,6 +24,7 @@ Flags:
   --gfx <mode>        Image protocol: kitty, halfblock, unicode, none (default: auto)
   --icons <mode>      Sidebar icons: nerd, emoji, ascii, none, auto (default: theme / auto)
   --debug             Verbose stderr + stack traces on error
+  -v, --version       Print version and exit
   -h, --help          Print this usage and exit
 `;
 
@@ -52,6 +53,10 @@ const { file, flags } = parsed;
 
 if (flags.help) {
   process.stdout.write(USAGE);
+  process.exit(0);
+}
+if (flags.version) {
+  process.stdout.write(`trimd v${VERSION}\n`);
   process.exit(0);
 }
 const isPiped = (file === null || file === '-') && !process.stdin.isTTY;

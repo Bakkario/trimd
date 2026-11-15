@@ -1,6 +1,6 @@
 {
   "name": "trimd",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "MIT",
   "author": "Bakkario",
   "type": "module",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "test": "node --import tsx --test 'test/*.test.ts' 'test/*.test.tsx'",
-    "build": "esbuild src/trimd.tsx --bundle --platform=node --format=esm --outfile=dist/trimd.js --banner:js=\"#!/usr/bin/env node\nimport { createRequire } from 'module';\nconst require = createRequire(import.meta.url);\" --log-level=warning && chmod +x dist/trimd.js",
+    "build": "esbuild src/trimd.tsx --bundle --platform=node --format=esm --minify --define:process.env.NODE_ENV=\\\"production\\\" --define:process.env.DEV=\\\"false\\\" --outfile=dist/trimd.js --banner:js=\"#!/usr/bin/env node\nimport { createRequire } from 'module';\nconst require = createRequire(import.meta.url);\" --log-level=warning && chmod +x dist/trimd.js",
     "start": "node dist/trimd.js",
     "dev": "node --import tsx src/trimd.tsx"
   },

@@ -6,6 +6,8 @@ import { ConfigError, UsageError } from './types.js';
 
 // 02 §4 — config contract.
 
+export const VERSION = '0.4.0';
+
 export const DEFAULTS: Config =
   { theme: 'default', showFrontmatter: true, sidebarOpen: true, showHidden: false };
 
@@ -14,7 +16,7 @@ export interface ParsedArgs {
   flags: {
     root?: string; theme?: string; config?: string;
     noFrontmatter?: boolean; noSidebar?: boolean; hidden?: boolean;
-    width?: number; debug?: boolean; help?: boolean;
+    width?: number; debug?: boolean; help?: boolean; version?: boolean;
     gfx?: 'kitty' | 'halfblock' | 'unicode' | 'none';
     icons?: 'nerd' | 'emoji' | 'ascii' | 'none' | 'auto';
     lang?: string;
@@ -37,6 +39,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-h' || a === '--help') flags.help = true;
+    else if (a === '-v' || a === '--version') flags.version = true;
     else if (a === '--no-frontmatter') flags.noFrontmatter = true;
     else if (a === '--no-sidebar') flags.noSidebar = true;
     else if (a === '--hidden') flags.hidden = true;
