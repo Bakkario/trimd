@@ -33,6 +33,7 @@ trimd <FILE> [flags]
 | `--hidden` | Show hidden (dot) entries in the sidebar |
 | `--width <n>` | Force the effective render width |
 | `--debug` | Verbose stderr + stack traces on error |
+| `-v`, `--version` | Print `trimd v0.4.0` and exit |
 | `-h`, `--help` | Print usage and exit |
 
 Flags override the config file, which overrides defaults. `NO_COLOR` (any value) or `TERM=dumb` forces plain unstyled output.
@@ -114,6 +115,13 @@ Reset: `rm -rf ~/.config/trimd`.
 ## Mouse
 
 Clicking works via the SGR (1006) mouse protocol: click a link in the document to navigate (http(s) links open in the browser), click a sidebar entry to open it. A click also moves keyboard focus to the pane you clicked (doc ↔ sidebar). This requires a terminal with mouse reporting — GNOME Terminal, Konsole, kitty, Alacritty, WezTerm, foot: yes. Inside tmux: add `set -g mouse on` to `.tmux.conf`. Inside screen: not supported (the keyboard remains fully functional).
+
+## What's New in v0.4.0
+
+- **Lean Production Bundle:** Minified single-file esbuild output (`dist/trimd.js` ≤ 2.2 MB, down from 4.4 MB) with `NODE_ENV="production"` and `DEV="false"` dead-code elimination.
+- **Fast Startup & Single-Pass Render:** `--version` / `--help` fast-path exits before loading React/Ink or `highlight.js`; single-pass initial render (`width` and `gfx` aligned between CLI and TUI); unified Git status/branch probe; and `node_modules`/`dist`/`master` exclusion in vault indexing.
+- **Bounded Auto-Highlighting & Runtime Caching:** `highlightAuto()` constrained to a 28-language subset with shebang short-circuit, plus in-memory caches for `renderFile()`, `buildIndex()`, and `renderHalfBlockImage()`, and zero-allocation `visibleWidth()` / `stripAnsi()`.
+- **Overlay Polish (`ISSUE-032`):** Clean toast modal frame alignment and background fill without `OSC 52` UI jargon.
 
 ## Features (v0.3.0)
 
