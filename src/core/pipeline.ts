@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import type { Token } from 'markdown-it';
 import { basename, dirname } from 'node:path';
 import type { FrontmatterMeta, RenderedDoc, Theme } from './types.js';
@@ -23,18 +23,14 @@ export interface PipelineCtx {
   lang?: string;
 }
 
-let indexRoot: string | null = null;
-let indexHidden: boolean = false;
-let index: RootIndex | null = null;
-
 function getRootIndex(ctx: PipelineCtx): RootIndex {
-  const showHidden = ctx.showHidden ?? false;
-  if (index === null || indexRoot !== ctx.root || indexHidden !== showHidden) {
-    index = buildIndex(ctx.root, showHidden);
-    indexRoot = ctx.root;
-    indexHidden = showHidden;
-  }
-  return index;
+  return buildIndex(ctx.root, ctx.showHidden ?? false);
+}
+
+const renderFileCache = new Map<string, RenderedDoc>();
+
+export function clearRenderCache(): void {
+  renderFileCache.clear();
 }
 
 function getResolver(ctx: PipelineCtx): (t: string) => string | null {
@@ -190,14 +186,22 @@ export function renderText(text: string, sourceLabel: string, ctx: PipelineCtx):
 }
 
 export function renderFile(abs: string, ctx: PipelineCtx): RenderedDoc {
+  let mtimeMs = 0;
   let text: string;
   try {
+    mtimeMs = statSync(abs).mtimeMs;
+    const cacheKey = `${abs}\0${mtimeMs}\0${ctx.root}\0${ctx.width}\0${ctx.theme.id}\0${ctx.showFrontmatter}\0${ctx.showHidden ?? false}\0${ctx.metaExpanded ?? false}\0${ctx.gfx ?? ''}\0${ctx.lang ?? ''}`;
+    const hit = renderFileCache.get(cacheKey);
+    if (hit) return hit;
+
     text = readFileSync(abs, 'utf8');
+    const doc = renderText(text, abs, ctx);
+    renderFileCache.set(cacheKey, doc);
+    return doc;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new FileMissingError('file not found: ' + abs);
     }
     throw new FileError('cannot read ' + abs + ': ' + (err as Error).message);
   }
-  return renderText(text, abs, ctx);
 }

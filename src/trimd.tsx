@@ -4,6 +4,7 @@ import { render } from 'ink';
 import { dirname, resolve as resolvePath } from 'node:path';
 import App from './ui/App.js';
 import { renderFile, renderText } from './core/pipeline.js';
+import { detectGfxMode } from './core/media.js';
 import { resolveTheme, allThemeIds } from './core/themes.js';
 import { defaultConfigPath, loadConfig, mergeConfig, parseArgs, VERSION } from './core/config.js';
 import { ConfigError, FileError, FileMissingError, UsageError } from './core/types.js';
@@ -99,7 +100,8 @@ const sidebarOpen = isPiped && flags.root === undefined ? false : merged.sidebar
 const showFrontmatter = merged.showFrontmatter;
 const showHidden = merged.showHidden;
 const cols = process.stdout.columns ?? 80;
-const width = merged.width ?? Math.max(cols - (sidebarOpen ? 30 : 0) - 2, 40);
+const width = merged.width ?? Math.max(cols - (sidebarOpen ? 31 : 0) - 5, 40);
+const resolvedGfx = detectGfxMode(process.env, merged.gfx);
 
 let doc: RenderedDoc;
 try {
@@ -111,7 +113,7 @@ try {
       theme,
       showFrontmatter,
       showHidden,
-      gfx: merged.gfx,
+      gfx: resolvedGfx,
       lang: flags.lang,
     });
   } else {
@@ -121,7 +123,7 @@ try {
       theme,
       showFrontmatter,
       showHidden,
-      gfx: merged.gfx,
+      gfx: resolvedGfx,
       lang: flags.lang,
     });
   }
@@ -148,7 +150,7 @@ const inst = render(
     sidebarOpen={sidebarOpen}
     showHidden={showHidden}
     showFrontmatter={showFrontmatter}
-    gfx={merged.gfx}
+    gfx={resolvedGfx}
     icons={flags.icons ?? merged.icons}
   />,
   ttyIn ? { stdin: ttyIn } : undefined,

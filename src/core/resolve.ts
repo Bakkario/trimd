@@ -20,7 +20,7 @@ const MD_RE = /\.mdx?$/i;
 const ASSET_RE = /\.(?:mdx?|markdown|png|jpe?g|gif|webp|svg|bmp)$/i;
 
 function skipDir(name: string, showHidden: boolean): boolean {
-  if (name === '.obsidian' || name === '.git') return true;
+  if (name === '.obsidian' || name === '.git' || name === 'node_modules' || name === 'dist' || name === 'master') return true;
   return name.startsWith('.') && !showHidden;
 }
 
@@ -45,7 +45,13 @@ function walk(dir: string, level: number, showHidden: boolean, emit: (abs: strin
   }
 }
 
+const indexCache = new Map<string, RootIndex>();
+
 export function buildIndex(root: string, showHidden: boolean): RootIndex {
+  const key = `${root}\0${showHidden}`;
+  const cached = indexCache.get(key);
+  if (cached) return cached;
+
   const exact = new Map<string, string>();
   const ci = new Map<string, string>();
   const stem = new Map<string, string>();
@@ -57,7 +63,9 @@ export function buildIndex(root: string, showHidden: boolean): RootIndex {
     const keyStem = stemOf(base).toLowerCase();
     if (!stem.has(keyStem)) stem.set(keyStem, abs);
   });
-  return { exact, ci, stem };
+  const idx = { exact, ci, stem };
+  indexCache.set(key, idx);
+  return idx;
 }
 
 export function makeResolver(idx: RootIndex): (target: string) => string | null {
@@ -124,13 +132,35 @@ export function listEntries(
 
 // Git status detection cached per session root (read-only per ADR-021, ADR-031 / R-14)
 const gitModifiedCache = new Map<string, ReadonlySet<string>>();
+const gitBranchCache = new Map<string, string | null>();
 
 export function clearGitCache(root?: string): void {
   if (root) {
     gitModifiedCache.delete(root);
+    gitBranchCache.delete(root);
+    indexCache.delete(`${root}\0false`);
+    indexCache.delete(`${root}\0true`);
+    backlinkCache.delete(root);
   } else {
     gitModifiedCache.clear();
+    gitBranchCache.clear();
+    indexCache.clear();
+    backlinkCache.clear();
   }
+}
+
+function parseBranchHeader(header: string): string | null {
+  // e.g. "## master...origin/master", "## No commits yet on main", "## HEAD (no branch)"
+  let rest = header.slice(3).trim();
+  if (rest.startsWith('No commits yet on ')) {
+    rest = rest.slice('No commits yet on '.length);
+  }
+  const dots = rest.indexOf('...');
+  if (dots !== -1) rest = rest.slice(0, dots);
+  const space = rest.indexOf(' ');
+  if (space !== -1) rest = rest.slice(0, space);
+  if (!rest || rest === 'HEAD') return null;
+  return rest;
 }
 
 export function detectGitModified(root: string): ReadonlySet<string> {
@@ -138,29 +168,34 @@ export function detectGitModified(root: string): ReadonlySet<string> {
   if (cached) return cached;
 
   const result = new Set<string>();
+  let branch: string | null = null;
   try {
-    const topRes = spawnSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
-      encoding: 'utf8',
-      timeout: 500,
-    });
-    if (topRes.status !== 0 || !topRes.stdout) {
-      gitModifiedCache.set(root, result);
-      return result;
-    }
-    const gitTop = topRes.stdout.trim();
-
-    const statusRes = spawnSync('git', ['-C', root, 'status', '--porcelain', '-uall'], {
+    const statusRes = spawnSync('git', ['-C', root, 'status', '--porcelain=v1', '-b', '-uall'], {
       encoding: 'utf8',
       timeout: 500,
     });
     if (statusRes.status !== 0 || !statusRes.stdout) {
       gitModifiedCache.set(root, result);
+      gitBranchCache.set(root, null);
       return result;
     }
 
     const lines = statusRes.stdout.split('\n');
+    let gitTop: string | null = null;
     for (const line of lines) {
-      if (!line || line.length < 4) continue;
+      if (!line) continue;
+      if (line.startsWith('## ')) {
+        branch = parseBranchHeader(line);
+        continue;
+      }
+      if (line.length < 4) continue;
+      if (gitTop === null) {
+        const topRes = spawnSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
+          encoding: 'utf8',
+          timeout: 500,
+        });
+        gitTop = topRes.status === 0 && topRes.stdout ? topRes.stdout.trim() : root;
+      }
       // status line e.g. " M file.md", "?? untracked.md", "R  old -> new"
       const pathPart = line.slice(3).trim();
       const actualPath = pathPart.includes(' -> ') ? pathPart.split(' -> ')[1].trim() : pathPart;
@@ -172,29 +207,15 @@ export function detectGitModified(root: string): ReadonlySet<string> {
   }
 
   gitModifiedCache.set(root, result);
+  gitBranchCache.set(root, branch);
   return result;
 }
-
-const gitBranchCache = new Map<string, string | null>();
 
 export function detectGitBranch(root: string): string | null {
   const cached = gitBranchCache.get(root);
   if (cached !== undefined) return cached;
-  let branch: string | null = null;
-  try {
-    const res = spawnSync('git', ['-C', root, 'rev-parse', '--abbrev-ref', 'HEAD'], {
-      encoding: 'utf8',
-      timeout: 300,
-    });
-    if (res.status === 0 && res.stdout) {
-      const b = res.stdout.trim();
-      if (b && b !== 'HEAD') branch = b;
-    }
-  } catch {
-    // fail-safe
-  }
-  gitBranchCache.set(root, branch);
-  return branch;
+  detectGitModified(root);
+  return gitBranchCache.get(root) ?? null;
 }
 
 // Phase 3 (Task 9.2, ADR-030) — read-only backlink index cached per root.

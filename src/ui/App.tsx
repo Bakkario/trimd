@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { basename, relative } from 'node:path';
 import type { LinkSpan, MouseEvt, RenderedDoc, Theme, ThemeColors, ThemeIconMap } from '../core/types.js';
 import { paint, allThemeIds, BUILTIN_THEMES, loadUserTheme, resolveIconSet } from '../core/themes.js';
-import { renderFile } from '../core/pipeline.js';
+import { clearRenderCache, renderFile } from '../core/pipeline.js';
 import { listEntries, detectGitModified, detectGitBranch, clearGitCache, buildIndex, buildBacklinkIndex } from '../core/resolve.js';
 import { navBack, navForward, navOpen, navUp, nextTheme, hitTestDoc, hitTestSidebar } from '../core/nav.js';
 import { MOUSE_ENABLE, MOUSE_DISABLE, createMouseParser } from '../core/mouse.js';
@@ -864,6 +864,7 @@ export default function App({
     // INV-3.5 — r = reload (re-render the current doc).
     if (input === 'r') {
       clearGitCache(root);
+      clearRenderCache();
       setState((st) => ({ ...st, reloadTick: st.reloadTick + 1 }));
       return;
     }

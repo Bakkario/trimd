@@ -22,9 +22,15 @@ export function detectGfxMode(env: NodeJS.ProcessEnv = process.env, override?: G
   return 'halfblock';
 }
 
+const halfBlockCache = new Map<string, string[]>();
+
 export function renderHalfBlockImage(imgBuf: Buffer, cols: number, rows: number, borderSgr = ''): string[] {
   const c = Math.max(1, cols);
   const r = Math.max(1, rows);
+  const cacheKey = `${imgBuf.length}:${imgBuf.subarray(0, 32).toString('hex')}:${c}x${r}:${borderSgr}`;
+  const cached = halfBlockCache.get(cacheKey);
+  if (cached) return [...cached];
+
   const totalPixels = c * (r * 2);
 
   const res = spawnSync(
@@ -66,7 +72,8 @@ export function renderHalfBlockImage(imgBuf: Buffer, cols: number, rows: number,
 
   // Bottom border
   out.push(`${bdr}╰${'─'.repeat(c)}╯${rst}`);
-  return out;
+  halfBlockCache.set(cacheKey, out);
+  return [...out];
 }
 
 export function kittyImageId(key: string): number {
@@ -176,6 +183,7 @@ const imageCache = new Map<string, { png: Buffer; width: number; height: number 
 
 export function clearImageCache(): void {
   imageCache.clear();
+  halfBlockCache.clear();
 }
 
 export function loadImageAsPng(absOrUrl: string, maxW = 960, maxH = 540): { png: Buffer; width: number; height: number } | null {
