@@ -78,6 +78,7 @@ function segsToString(segs: Seg[]): string {
 
 // 02 §8 — strip ANSI escapes (SGR, OSC 8, Kitty APC, and tmux DCS sequences) from a rendered string.
 export function stripAnsi(s: string): string {
+  if (!s.includes('\x1b')) return s;
   return s
     .replace(/\x1bPtmux;[\s\S]*?\x1b\\(?:\x1b\\)?/g, '')
     .replace(/\x1b_G[\s\S]*?\x1b\\/g, '')
@@ -148,19 +149,21 @@ export function charWidth(cp: number): number {
 
 export function visibleWidth(s: string): number {
   const stripped = stripAnsi(s);
-  const cps: number[] = [];
-  for (const ch of stripped) {
-    const cp = ch.codePointAt(0);
-    if (cp !== undefined) cps.push(cp);
-  }
   let w = 0;
-  for (let i = 0; i < cps.length; i++) {
-    const cp = cps[i];
+  let i = 0;
+  const len = stripped.length;
+  while (i < len) {
+    const cp = stripped.codePointAt(i)!;
+    i += cp > 0xffff ? 2 : 1;
+    if (cp >= 0x20 && cp <= 0x7e) {
+      w += 1;
+      continue;
+    }
     const cw = charWidth(cp);
     // If a 1-cell glyph is followed by VS16 (U+FE0F), terminal displays it as 2 columns
-    if (cw === 1 && i + 1 < cps.length && cps[i + 1] === 0xfe0f) {
+    if (cw === 1 && i < len && stripped.codePointAt(i) === 0xfe0f) {
       w += 2;
-      i++; // skip VS16
+      i += 1; // skip VS16
     } else {
       w += cw;
     }

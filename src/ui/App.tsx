@@ -316,7 +316,7 @@ export default function App({
   const activeOutgoingLinks = useMemo(() => {
     const seen = new Set<string>();
     const list: { label: string; resolved: boolean }[] = [];
-    for (const line of activeDocMemo.lines || []) {
+    for (const line of docMemo.lines || []) {
       for (const span of line.links || []) {
         if (span.kind === 'wikilink' || span.kind === 'file') {
           const key = span.href;
@@ -328,7 +328,7 @@ export default function App({
       }
     }
     return list;
-  }, [cur.abs, activeDocMemo]);
+  }, [cur.abs, docMemo]);
 
   const activeBacklinks = useMemo(() => {
     try {
