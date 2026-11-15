@@ -1,6 +1,8 @@
 {
   "name": "trimd",
   "version": "0.3.0",
+  "license": "MIT",
+  "author": "Bakkario",
   "type": "module",
   "bin": {
     "trimd": "dist/trimd.js"

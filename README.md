@@ -132,3 +132,18 @@ Clicking works via the SGR (1006) mouse protocol: click a link in the document t
 - TUI only — no non-TTY / print-to-stdout mode.
 - Linux only (`xdg-open` for external links); no Windows/macOS.
 - Read-only toward the vault: trimd never writes to or indexes `~/Documents/Obsidian`.
+
+## License & Third-Party Attributions
+
+Trimd is licensed under the [MIT License](LICENSE) — Copyright (c) 2026 **Bakkario**.
+
+### Third-Party Open-Source Software
+
+Trimd uses and bundles the following open-source libraries:
+
+- **[ink](https://github.com/vadimdemedes/ink)**, **[react](https://react.dev/)**, **[yoga-layout](https://yogalayout.dev/)**, **[chalk](https://github.com/chalk/chalk)** — MIT License
+- **[markdown-it](https://github.com/markdown-it/markdown-it)** — MIT License (with **[entities](https://github.com/fb55/entities)** under BSD-2-Clause and **[argparse](https://github.com/nodeca/argparse)** under PSF-2.0)
+- **[markdown-it-task-lists](https://github.com/revin/markdown-it-task-lists)** — ISC License
+- **[cli-highlight](https://github.com/felixfbecker/cli-highlight)** — ISC License (with **[parse5](https://github.com/inikulin/parse5)** under MIT)
+- **[highlight.js](https://highlightjs.org/)** — BSD-3-Clause License (via `cli-highlight`)
+- **[yaml](https://github.com/eemeli/yaml)** — ISC License
