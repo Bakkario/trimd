@@ -70,14 +70,16 @@ test('Lualine 3-tier footer & Bufferline top chrome render colored chips, diagno
     const raw = (out as unknown as { chunks: string[] }).chunks.join('');
     const frame = stripAnsi(raw);
 
-    // Top Bufferline bar: DOC pill, active tab marker ●, < B  F >, min, word count
-    assert.ok(frame.includes('DOC'), 'DOC mode pill present');
-    assert.ok(frame.includes('¶ note.md ●'), 'active Bufferline tab with ● marker');
+    // Top Bufferline bar: active tab marker ●, < B  F >, min, word count (no redundant DOC/FILES pills)
+    const topLine = frame.split('\n').find((l) => l.includes('¶ note.md ●')) ?? '';
+    assert.ok(topLine.includes('¶ note.md ●'), 'active Bufferline tab with ● marker');
+    assert.ok(!topLine.includes('DOC') && !topLine.includes('FILES'), 'no redundant DOC/FILES pills in top bar');
     assert.ok(frame.includes('< B  F >'), 'history pill present');
     assert.ok(frame.includes('1 min'), 'reading time chip present');
     assert.ok(/\d+w/.test(frame), 'word count pill present');
 
-    // Bottom Lualine footer: active file chip, two-tone hints, diagnostics, position · pct, theme badge
+    // Bottom Lualine footer: DOC pill, active file chip, two-tone hints, diagnostics, position · pct, theme badge
+    assert.ok(frame.includes('DOC'), 'DOC mode pill present in footer');
     assert.ok(frame.includes('note.md'), 'active file chip present in footer');
     assert.ok(frame.includes('scroll') && frame.includes('outline') && frame.includes('peek'), 'expanded key hints at 120 cols');
     assert.ok(frame.includes('✔ 0 warn'), 'zero-warning diagnostics chip present');

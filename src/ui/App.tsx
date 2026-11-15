@@ -1004,14 +1004,14 @@ export default function App({
 
   // ADR-023 (ISSUE-010) / D-3.2 (ADR-026) — Bufferline-style pane headers:
   // Row 0 across headerBg.
-  // Sidebar: ` FILES ` in accentPill when focused else tinted vault badge on calloutBg.
-  // Doc: ` DOC ` + Bufferline history tabs + colored `< B  F >` + reading min + word count pill.
+  // Sidebar: active vault badge on codeBg when focused else dim on calloutBg.
+  // Doc: Bufferline history tabs + colored `< B  F >` + reading min + word count pill.
   const isNerd = iconSet.file === '\ue609 ';
   const columns = stdout.columns || 80;
-  const cwdName = fitLabel(state.cwd === root ? basename(root) : relative(root, state.cwd), 19);
+  const cwdName = fitLabel(state.cwd === root ? basename(root) : relative(root, state.cwd), 24);
   const dirGlyph = iconSet.dir || '';
   const sidebarHeader = state.focus === 'sidebar'
-    ? paintChip(themeObj, ' FILES ', 'accentPill') + ' ' + paintChip(themeObj, dirGlyph + cwdName, 'heading1', 'headerBg', true)
+    ? paintChip(themeObj, ` ${dirGlyph}${cwdName} `, 'heading1', 'codeBg', true)
     : paintChip(themeObj, ` ▾ ${cwdName} `, 'dim', 'calloutBg');
 
   // Doc stats: reading time (~200 wpm)
@@ -1039,13 +1039,9 @@ export default function App({
     + fStr
     + paintChip(themeObj, ' >', 'dim', 'calloutBg');
 
-  const docPill = state.focus === 'doc'
-    ? paintChip(themeObj, ' DOC ', 'accentPill')
-    : paintChip(themeObj, ' DOC ', 'dim', 'calloutBg');
-
   const activeTabLabel = state.stack.length > 1 && columns >= 95
     ? fitLabel(basename(path) || path, 22)
-    : fitLabel(path, Math.max(10, width - 38));
+    : fitLabel(path, Math.max(10, width - 32));
   const activeTab = paintChip(
     themeObj,
     ` ¶ ${activeTabLabel} ● `,
@@ -1062,7 +1058,7 @@ export default function App({
       + paintChip(themeObj, ` ${fitLabel(basename(relative(root, state.stack[state.cur + 1].abs)), 14)} `, 'dim', 'calloutBg')
     : '';
 
-  const docTitleText = docPill + ' ' + prevTab + activeTab + nextTab;
+  const docTitleText = ' ' + prevTab + activeTab + nextTab;
   const minChip = paintChip(themeObj, ` ${readingMin} min `, 'success', 'calloutBg');
   const wordChip = paintChip(themeObj, ` ${wordCount}w `, 'accentPill');
   const docRightStat = `${histStr} ${minChip}${wordChip}`;
