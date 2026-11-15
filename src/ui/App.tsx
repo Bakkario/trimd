@@ -8,7 +8,7 @@ import { listEntries, detectGitModified, detectGitBranch, clearGitCache, buildIn
 import { navBack, navForward, navOpen, navUp, nextTheme, hitTestDoc, hitTestSidebar } from '../core/nav.js';
 import { MOUSE_ENABLE, MOUSE_DISABLE, createMouseParser } from '../core/mouse.js';
 import { openExternal, canOpen } from '../core/open.js';
-import { encodeOsc52, isSshSession } from '../core/clipboard.js';
+import { encodeOsc52, isSshSession, extractSelectionText, applySelectionHighlight, type SelectionPoint } from '../core/clipboard.js';
 import type { DocState, Focus, UiState } from '../core/nav.js';
 import { findMatches, applySearch } from '../core/search.js';
 import { stripAnsi, visibleWidth } from '../core/renderer.js';
@@ -349,14 +349,24 @@ export default function App({
     return collectVisibleLinks(activeDocMemo.lines, scrollTop, contentRows);
   }, [linkMode !== null, activeDocMemo, scrollTop, contentRows]);
 
+  const [selection, setSelection] = useState<{ anchor: SelectionPoint; head: SelectionPoint; active: boolean } | null>(null);
+  const selectionRef = useRef<{ anchor: SelectionPoint; head: SelectionPoint; active: boolean } | null>(null);
+  selectionRef.current = selection;
+
   const displayDoc = useMemo(() => {
-    if (!linkMode || visibleHints.length === 0) return activeDocMemo;
-    const linesSlice = activeDocMemo.lines.slice(scrollTop, scrollTop + contentRows);
-    const hintedSlice = applyLinkHints(linesSlice, visibleHints, scrollTop, themeObj, width, linkMode.buf);
-    const newLines = activeDocMemo.lines.slice();
-    newLines.splice(scrollTop, contentRows, ...hintedSlice);
-    return { ...activeDocMemo, lines: newLines };
-  }, [activeDocMemo, linkMode, visibleHints, scrollTop, contentRows, themeObj, width]);
+    let base = activeDocMemo;
+    if (linkMode && visibleHints.length > 0) {
+      const linesSlice = base.lines.slice(scrollTop, scrollTop + contentRows);
+      const hintedSlice = applyLinkHints(linesSlice, visibleHints, scrollTop, themeObj, width, linkMode.buf);
+      const newLines = base.lines.slice();
+      newLines.splice(scrollTop, contentRows, ...hintedSlice);
+      base = { ...base, lines: newLines };
+    }
+    if (selection) {
+      base = { ...base, lines: applySelectionHighlight(base.lines, selection.anchor, selection.head) };
+    }
+    return base;
+  }, [activeDocMemo, linkMode, visibleHints, scrollTop, contentRows, themeObj, width, selection]);
 
   // ISSUE-017: compute sidebar scrollTop when entries exceed contentRows
   const showBack = state.cwd !== root;
@@ -401,7 +411,7 @@ export default function App({
   }, [cur.abs, cur.doc.title, themeObj.id]);
 
   useEffect(() => {
-    process.stdout.write(MOUSE_ENABLE);
+    process.stdout.write(MOUSE_ENABLE + '\x1b[?1002h');
     const p = createMouseParser((e: MouseEvt) => {
       // D-3.6 (ADR-030): Mouse wheel events
       if (e.action === 'wheelUp' || e.action === 'wheelDown') {
@@ -427,14 +437,61 @@ export default function App({
         return;
       }
 
+      if (e.action === 'press' && e.button === 0) {
+        const { state: st, doc, scrollTop: top, contentRows: crows } = view.current;
+        const rowY = e.y - 1;
+        const paneX = e.x - (st.sidebarOpen ? 31 : 0);
+        const docX = paneX - 2;
+        if (rowY >= 0 && rowY < crows && docX >= 0 && docX < view.current.docWidth && doc.lines.length > 0) {
+          const docLine = Math.max(0, Math.min(doc.lines.length - 1, top + rowY));
+          const pt: SelectionPoint = { line: docLine, col: Math.max(0, docX) };
+          if (selectionRef.current?.active) {
+            setSelection((sel) => (sel ? { ...sel, head: pt } : { anchor: pt, head: pt, active: true }));
+          } else {
+            setSelection({ anchor: pt, head: pt, active: true });
+          }
+        } else if (selectionRef.current) {
+          setSelection(null);
+        }
+        return;
+      }
+
       if (e.action !== 'release' || e.button !== 0) return;
       const { state: st, doc, scrollTop: top, render: renderNow, contentRows: crows, searchRowOpen } = view.current;
       // ADR-023 (ISSUE-010, ISSUE-025) — Row 0 is the header bar, content spans `crows`
       // rows (e.y = 1 .. crows), and the status row (1 + crows) is not clickable.
       const searchOffset = 0;
-      if (e.y >= 1 + crows + searchOffset) return;
+      if (e.y >= 1 + crows + searchOffset) {
+        if (selectionRef.current) setSelection(null);
+        return;
+      }
       const rowY = e.y - 1 - searchOffset;
-      if (rowY < 0) return;
+      if (rowY < 0) {
+        if (selectionRef.current) setSelection(null);
+        return;
+      }
+
+      // ISSUE-030: If dragging a non-empty selection in the doc pane, copy via OSC 52 and skip click nav
+      if (selectionRef.current?.active) {
+        const anchor = selectionRef.current.anchor;
+        setSelection(null);
+        const paneX = e.x - (st.sidebarOpen ? 31 : 0);
+        const docX = paneX - 2;
+        if (docX >= 0 && doc.lines.length > 0) {
+          const releaseLine = Math.max(0, Math.min(doc.lines.length - 1, top + rowY));
+          const releaseCol = Math.max(0, docX);
+          if (anchor.line !== releaseLine || anchor.col !== releaseCol) {
+            const selectedText = extractSelectionText(doc.lines, anchor, { line: releaseLine, col: releaseCol });
+            if (selectedText.length > 0) {
+              stdout.write(encodeOsc52(selectedText, process.env));
+              setToast(`Copied ${selectedText.length} chars (OSC 52)`);
+              setTimeout(() => setToast(null), 2000);
+            }
+            if (st.focus !== 'doc') setState((s) => ({ ...s, focus: 'doc' }));
+            return;
+          }
+        }
+      }
       if (st.sidebarOpen && e.x < 30) {
         // INV-3.6 (am. ISSUE-003, ADR-031) — mouseup in the sidebar region focuses
         // the sidebar; if the row carries an entry, it is opened.
@@ -535,7 +592,7 @@ export default function App({
     process.stdin.on('data', p);
     return () => {
       process.stdin.removeListener('data', p);
-      process.stdout.write(MOUSE_DISABLE);
+      process.stdout.write('\x1b[?1002l' + MOUSE_DISABLE);
     };
   }, []);
 
