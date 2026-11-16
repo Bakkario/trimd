@@ -24,7 +24,6 @@ See the [full README](docs/README.md) for all flags, keymap, theming, config, an
 
 - [Full README](docs/README.md) — flags, keymap, SSH/OSC 52, theming, config, what's new
 - [SAMPLE.md](docs/SAMPLE.md) — feature showcase (lists, tables, code, images, mermaid, callouts, wikilinks)
-- [Mockups](docs/mockups/) · [Screenshots](docs/screenshots/) · [Superfile layout](docs/superfile_layout.png)
 
 ## License
 
