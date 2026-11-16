@@ -143,9 +143,9 @@ Whether you're reading a GitHub repo's `docs/` directory, architecture specs, or
 
 Trimd renders both **local relative paths** and **remote URLs** inline using either the **Kitty Graphics Protocol** (with ID caching for smooth scrolling) or **24-bit Truecolor Half-Blocks** (`▀`).
 
-Local asset (`test/fixtures/sample-diagram.png`):
+Local asset (`../test/fixtures/sample-diagram.png`):
 
-![Trimd Pipeline Diagram](test/fixtures/sample-diagram.png)
+![Trimd Pipeline Diagram](../test/fixtures/sample-diagram.png)
 
 Standard Markdown image embed (`![[...]]`) also works:
 
