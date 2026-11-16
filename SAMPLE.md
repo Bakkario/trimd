@@ -35,7 +35,7 @@ Trimd enables smart typographic replacements out of the box, turning plain ASCII
 - Emphasis: **Bold text**, *italic text*, ~~strikethrough~~, ++inserted text++, and ==highlighted text==
 - Scientific notation: Water is H~2~O and this is the 19^th^ century
 - Classic emojis: :wink: :laughing: :yum: or shortcuts like `8-)` and `;)`
-
+- هل يدعم العربية أيضا؟
 ---
 
 ## 2. Nested Blockquotes & Callouts
