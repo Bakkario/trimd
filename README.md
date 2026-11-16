@@ -6,7 +6,13 @@ A terminal TUI that renders markdown — primarily Obsidian notes — as clean, 
 
 ## Install
 
-Linux + Node 22+ + pnpm:
+**From npm** (Linux + Node 22+):
+
+```bash
+npm install -g @bakkario/trimd
+```
+
+**From source** (development):
 
 ```bash
 pnpm install && pnpm build && pnpm link --global
