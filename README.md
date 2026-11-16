@@ -1,8 +1,14 @@
 # Trimd
 
-**Demo:** [trimd-demo.mp4](docs/trimd-demo.mp4)
+
 
 A terminal TUI that renders markdown — primarily Obsidian notes — as clean, styled text with **zero visible markdown syntax**. Open a document, browse a toggleable file-tree sidebar, click links (wikilinks navigate in-app; http(s) links open in your browser), and switch between JSON-defined themes. Linux, pure Node, no daemon, no caches written to disk, and strictly read-only toward your vault.
+
+**Demo:** [trimd-demo.mp4](docs/trimd-demo.mp4)
+
+https://github.com/user-attachments/assets/a8a73267-e975-4442-b45f-2006689c1d3b
+
+
 
 ## Install
 
